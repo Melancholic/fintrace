@@ -1,0 +1,48 @@
+name: fintrace
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: fintrace-postgres
+    restart: unless-stopped
+    environment:
+      # Pinned literally rather than ${TZ}: a TZ set in the shell would silently win and
+      # re-read every stored timestamp as a different wall-clock time (design-decisions.md §6.4).
+      TZ: Europe/Nicosia
+      PGTZ: Europe/Nicosia
+      POSTGRES_DB: fintrace
+      POSTGRES_USER: fintrace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      # Set explicitly so the mount point does not depend on the image's default, which
+      # has moved between Postgres major versions.
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fintrace -d fintrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  fintrace-core:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: fintrace-core
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Nicosia
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fintrace
+      SPRING_DATASOURCE_USERNAME: fintrace
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # Overridable so the stack can run alongside a local bootTestRun on 8080.
+      - "${CORE_PORT:-8080}:8080"
+
+volumes:
+  postgres-data:
