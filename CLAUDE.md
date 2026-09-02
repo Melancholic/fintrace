@@ -99,7 +99,7 @@ stack** — its own Portainer stack, shared with other NAS services. It must nev
 `deploy/docker-compose.yml`; fintrace knows only an `issuer-uri` and speaks plain OIDC via
 discovery. No provider-specific SDK anywhere.
 
-### Event sourcing (strict, all entities)
+### Event sourcing (strict, every entity inside a workspace)
 
 Events are the only thing written directly; projection tables (`t_operations`, and at M1
 `t_accounts`, `t_categories`, `t_anchors`) are derived and rebuildable. The non-negotiables:
@@ -143,13 +143,24 @@ Event sourcing does **not** leak into the API: the REST surface is conventional
 Every domain entity carries `workspace_id`, in every table and every query, from day one. All
 API resources are nested under `/workspaces/{workspaceId}/`.
 
-Lifecycle is one-way: `DRAFT` → `ACTIVE`. Import is permitted **only** into a `DRAFT`
-workspace and is permanently closed afterwards. Status is stored explicitly, never inferred
-from emptiness ("start empty" produces an `ACTIVE` workspace with no data).
+Statuses are `NEW` → `ACTIVE` ↔ `ARCHIVED`, and `DELETED` from either (terminal); `NEW` is the
+former `DRAFT`. Import is permitted **only** into a `NEW` workspace and is permanently closed
+afterwards. `ARCHIVED` is read-only **system-wide** — every command is rejected, checked once at
+the command entry point rather than per handler. Deletion is soft but terminal — there is no restore, and a retention job hard-deletes `DELETED`
+workspaces after a configurable window (default 30 days) by cascade. Archiving is the recoverable
+path and belongs in the main UI; deletion belongs in settings, warned as unrecoverable and
+confirmed by typing the workspace name — a UI affordance only, the API takes no confirmation
+parameter. Status is stored explicitly,
+never inferred from emptiness ("start empty" produces an `ACTIVE` workspace with no data), and
+emptiness excludes the four seeded system categories or a fresh workspace fails its own check.
+
+**The workspace record is the one thing that is not event-sourced** — `t_workspaces` is an
+authoritative table written directly, never rebuilt. It is the tenant boundary, not an entity
+inside it; as an aggregate it made replay circular.
 
 This single decision is what removes re-import conflicts, import-vs-manual duplicate
 detection, override layers, and the imported-vs-own operation distinction. Don't reintroduce
-them. A failed import must leave a *genuinely* empty `DRAFT` — hence one transaction for the
+them. A failed import must leave a *genuinely* empty `NEW` — hence one transaction for the
 whole import.
 
 ### Domain rules that are easy to get wrong
@@ -166,7 +177,10 @@ whole import.
   most recent anchor for an account may be deleted. Anchors are the sole exception to the
   no-physical-deletion rule.
 - **Nothing referenced by an operation is ever physically deleted**: categories are
-  soft-deleted, accounts archived, operations cancelled. Only a whole workspace is truly deleted.
+  soft-deleted, accounts archived, operations cancelled, workspaces set to `DELETED`. Anchors
+  are the sole physical deletion in the system. Archiving an account is permitted with a non-zero
+  balance and changes no computed figure — the remedy for a stale balance is an anchor at zero;
+  writes to an archived account are rejected at command time.
 - **Categories** are an adjacency-list tree of unlimited depth. Four immutable system
   categories (INCOME/EXPENSE roots and both `Others`) are seeded with the workspace. Moves stay
   within the same branch (crossing branches would rewrite the meaning of historical

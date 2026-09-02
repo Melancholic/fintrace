@@ -331,18 +331,60 @@ day one. Retrofitting it later is painful.
 
 ### 4.1.1 Workspace lifecycle
 
-A workspace has an explicit status. The transition is one-way.
+> **Revised at M1.** This section previously described a one-way `DRAFT → ACTIVE` lifecycle
+> with workspace deletion as a physical delete. `DRAFT` is renamed `NEW`, two further statuses
+> are added, and deletion is soft. The rationale for each is below; `docs/plans/M1.md` carries
+> the alternatives considered.
 
-| Status | Meaning |
-|---|---|
-| `DRAFT` | Created, no data yet. The only state in which import is permitted. |
-| `ACTIVE` | Operational. Data enters only through the service API. Import is permanently closed. |
+A workspace has an explicit status.
+
+| Status | Meaning | Writes | Reads |
+|---|---|---|---|
+| `NEW` | Created, no data yet. The only state in which import is permitted. | import only | yes |
+| `ACTIVE` | Operational. Data enters only through the service API. Import is permanently closed. | all | yes |
+| `ARCHIVED` | Kept for reference. **Read-only** — every command is rejected. | none | yes |
+| `DELETED` | Withdrawn. Terminal, and invisible to reads. | none | no |
+
+`NEW` is the former `DRAFT`, renamed because "draft" reads oddly beside `ARCHIVED` and
+`DELETED`; the semantics are unchanged.
+
+**Transitions:** `NEW → ACTIVE` (import or "start empty"), `ACTIVE ↔ ARCHIVED`,
+`ACTIVE → DELETED`, `ARCHIVED → DELETED`. `NEW → ARCHIVED` is rejected — there is nothing to
+keep for reference. `DELETED` is terminal.
+
+**`ARCHIVED` is read-only across the whole system**, not merely on workspace endpoints: it
+forbids creating an operation, moving a category, archiving an account. The check therefore
+belongs at the single command entry point, beside the workspace-ownership check (§7.4), not in
+each handler. A full rebuild (§4.10) is still permitted on an archived workspace — it writes no
+facts, it recomputes derived rows.
+
+**Deletion is soft**, a `DELETED` status rather than a `DELETE` statement. Combined with §4.8,
+this leaves **anchors as the only physical deletion anywhere in the system** (§10.4).
+
+Storage is reclaimed by a **scheduled retention job**, not by a human action: a `DELETED`
+workspace is hard-deleted once `deleted_at` is older than a configurable window (default 30
+days), by a single `DELETE FROM t_workspaces` relying on `ON DELETE CASCADE`. An admin purge
+endpoint was considered and rejected — the reclaim is unattended housekeeping and nothing about
+it needs a button. The window is **not** a grace period: `DELETED` is terminal, so the data is
+unreachable from the moment of deletion whatever is still on disk.
+
+**Archiving is the recoverable path; deletion is not, and the UI must make that asymmetry
+obvious before the click rather than after it.** Archive is a prominent action on the main
+workspace screen. Delete lives in workspace settings, states that it cannot be undone, and
+requires the user to type the workspace name to confirm — the standard destructive-action
+pattern, chosen because a workspace is years of financial history and the mistake has no
+remedy. A user wanting a workspace out of sight should land on archive without having to read
+anything.
+
+The confirmation is a **client affordance, not an API precondition**: `DELETE /workspaces/{id}`
+takes no confirmation parameter. A caller reaching the API has already decided, and the typed
+name exists to slow a human hand down, not to authorise anything.
 
 **Status is stored explicitly, not inferred from whether entities exist.** The "start empty"
 path (below) produces an `ACTIVE` workspace containing nothing, which is indistinguishable
-from a `DRAFT` one by data alone.
+from a `NEW` one by data alone.
 
-**Two ways to leave `DRAFT`:**
+**Two ways to leave `NEW`:**
 
 1. **Successful import** — the initialisation path described in §4.2.
 2. **Start empty** — an explicit user action for workspaces that do not originate from
@@ -352,16 +394,18 @@ from a `DRAFT` one by data alone.
 **User flow:**
 
 ```
-[+ New workspace]  →  DRAFT
+[+ New workspace]  →  NEW
                         │
                         ├── drag & drop dump  →  importing  ──┬── success  →  ACTIVE
-                        │                                     └── failure  →  DRAFT (retry)
+                        │                                     └── failure  →  NEW (retry)
                         │
                         └── "start empty"  ───────────────────────────────→  ACTIVE
+
+ACTIVE  ⇄  ARCHIVED          both  →  DELETED (terminal)
 ```
 
 **Import must be atomic.** On failure the workspace has to return to a genuinely empty
-`DRAFT`, not a visually empty one — otherwise partially written entities make it non-empty
+`NEW`, not a visually empty one — otherwise partially written entities make it non-empty
 and the emptiness check will reject every retry. A single transaction covering the whole
 import is the simplest guarantee, and 6k records makes that unproblematic.
 
@@ -370,17 +414,27 @@ workspace. The UI needs to distinguish them — "not started yet" and "failed wi
 are different screens — but they are not workspace statuses.
 
 **Recreating a workspace** is only needed when an import *succeeded* but produced wrong
-data: the workspace is already `ACTIVE`, so the only path is delete and create again. A
-failed import does not require it — the workspace simply stays in `DRAFT`.
+data: the workspace is already `ACTIVE`, so the only path is delete and create again — a soft
+delete, leaving the bad data in place but invisible. A failed import does not require it — the
+workspace simply stays in `NEW`.
+
+**The workspace record itself is not event-sourced** (§4.10): `t_workspaces` is an ordinary
+authoritative table, and status changes and renames are plain `UPDATE`s. It is the tenant
+boundary rather than data inside the tenant, and making it an aggregate turns a rebuild
+circular — replay would delete and re-create, inside one transaction, the very row that scopes
+it. No rename history is kept; reports show current names (§4.7).
 
 ### 4.2 Import is workspace initialisation, not synchronisation
 
-**Decision: a workspace can only be imported into while it is in `DRAFT` (§4.1.1). After
+**Decision: a workspace can only be imported into while it is in `NEW` (§4.1.1). After
 initialisation it becomes `ACTIVE` and data enters exclusively through the service API (Web
 UI today; other importers later).**
 
-`DRAFT` additionally implies **empty**, defined as: no entity anywhere references this
-`workspace_id`. The workspace record itself exists — creating a workspace and importing into
+`NEW` additionally implies **empty**, defined as: no entity anywhere references this
+`workspace_id` — with one exclusion, since the four system categories (§4.7) are seeded with
+the workspace itself. Emptiness is therefore: no accounts, no operations, no anchors, and no
+*non-system* categories. Without the exclusion a fresh workspace fails its own check and every
+import is rejected. The workspace record itself exists — creating a workspace and importing into
 it are two distinct actions. Emptiness should be a single reusable check, so that adding a
 new entity type later cannot silently break it.
 
@@ -394,7 +448,7 @@ new entity type later cannot silently break it.
 | Conflict resolution rules on every import | Not needed |
 | Two classes of operation (imported vs own) | An operation is just an operation |
 
-**Failed import:** the workspace stays in `DRAFT` and can be retried directly — provided the
+**Failed import:** the workspace stays in `NEW` and can be retried directly — provided the
 import was atomic (§4.1.1).
 
 **Successful import that produced wrong data:** the workspace is already `ACTIVE`, so the
@@ -427,6 +481,22 @@ projection update.
 **Immutability is preserved inside a workspace**, and it applies uniformly — origin is a
 field (`origin`, `external_ref`), not a separate class of entity with different rules.
 
+**An event applies a projection *change*, not a row.** One event may write two rows (a transfer,
+§4.5) or remove one, so the handler contract is upsert-or-remove rather than insert:
+
+| Event | Projection effect |
+|---|---|
+| *created*, *revised* | upsert the row(s) — keyed by `(workspace_id, id)`, so replaying created-then-revised lands on the same row |
+| *cancelled*, operation or transfer | row(s) **removed**; §10.2 requires a cancelled operation to vanish from listings and statistics, and a row that is absent cannot be forgotten in a `WHERE` clause |
+| *cancelled*, anchor | row removed (§10.4) |
+| *cancelled*, category | row **kept**, `deleted = true` — operations still reference it (§4.7) |
+
+Archiving an account and activating a workspace are *revised*, not *cancelled*: they are
+reversible state, and *cancelled* means end of life.
+
+The upsert rather than insert is what keeps a rebuild idempotent, and therefore what makes the
+rebuild-equality test meaningful.
+
 ### 4.4 Event granularity: full state, not deltas
 
 **Decision: events carry the complete resulting state of the entity, not a diff.**
@@ -440,6 +510,24 @@ event is just "take the body as the new version".
 
 **Price accepted:** larger event bodies, and intent is not recoverable — you can diff two
 versions to see *what* changed, but not *what the user meant*. Irrelevant at this scale.
+
+**No-op revisions.** The API takes a full body on every save (§10.0), so a client can submit
+state identical to what is stored — a user who opens an edit form and saves without changing
+anything. **M1 appends the event anyway; suppressing it is planned, not permanent.** Writing a
+log line that carries no information is harmless (replay upserts the same row), while wrongly
+suppressing a real edit is silent data loss, so the safe direction comes first and the
+suppression follows once the write path has settled.
+
+The deferral is genuinely free because **the API contract does not change either way**: the
+caller gets the same `200` and the same body: only the log differs.
+
+When it is implemented, one constraint is load-bearing: **equality must be structural, never a
+hand-written field comparison.** Full-state payloads are immutable data classes, so comparing a
+candidate payload against the previous one — with `recorded_at` normalised, since it always
+differs — is `equals`, and a field added later is included automatically. A hand-rolled
+comparison is the version that silently drops an edit the day someone forgets to extend it. The
+check belongs in one place on the revise path, never per aggregate, and reading the previous
+payload wants an index on `t_events(workspace_id, aggregate_id, id)` (§4.14).
 
 ### 4.5 Transfers: two ledger entries, not one record
 
@@ -461,6 +549,12 @@ transformation the source does not perform, and performing it is the importer's 
 
 Every query touching accounts becomes uniform, which is the main win. Multi-currency
 transfers stop being a special case.
+
+**One event, two rows.** A transfer is a single aggregate (`aggregate_type = transfer`,
+`aggregate_id = transfer_id`) whose payload carries the full state of **both** legs and whose
+application writes two `t_operations` rows. Emitting two operation events instead was rejected:
+replay would then have a window — after the first row, before the second — in which the pair
+invariant is violated, and every later revision would have to keep two events in step forever.
 
 **Price accepted:**
 
@@ -678,17 +772,39 @@ selection but remains in reports, charts and statistics.
 - Archived accounts are not offered when creating an operation or a transfer, on either side.
 - **Unarchiving is supported** — archiving is a flag, so reversing a mistake is cheap.
 
-**Open:** what to do about a non-zero balance at archiving time — display as-is, require it to
-be zeroed first, or ignore. Also whether archived accounts count toward a total-across-accounts
-figure (probably not, but then the total jumps at the moment of archiving). In practice an
-account is archived once it is already empty; the general case still needs an answer before
-implementation.
+**Answered at M1: archiving is permitted unconditionally, and archived accounts keep counting
+in every computed figure.** Archiving changes what is *offered*, never what is *counted*.
+
+Requiring a zero balance first was rejected twice over. The importer emits source-deleted
+accounts as archived (§5.1) and MoneyOK does not empty an account before deleting it, so the
+rule would force the importer to synthesise a zeroing operation — a fabricated fact at exactly
+the boundary where a defect is silent. And "balance is zero" is not a stable property here:
+balance is computed as of a date and back-dating is normal (§6), so an account that is zero at
+archive time stops being zero the moment a retrospective operation is entered. The invariant can
+be checked but not maintained.
+
+Excluding archived accounts from cross-account totals was rejected for a sharper reason: it
+would let archiving **rewrite history** — the balance series would recompute last year's total
+because an account was archived today, which is the retroactive patching §6.2 exists to
+eliminate.
+
+The remedy for a closed account still carrying a stale balance is not the flag but **an anchor
+at zero**: "I checked, it is closed and empty" is an observation (§4.6), the forgotten
+withdrawal surfaces as that anchor's unexplained difference rather than being silently
+swallowed, and balances before the anchor are untouched.
+
+Consequently **writes to an archived account are rejected at command time** — as an operation's
+account, as either transfer leg, as an anchor target. A legitimate back-dated entry into a
+closed account goes unarchive → enter → archive: the flag carries no "archived since" date, and
+inventing one would be a second temporal axis. Statistics endpoints take an `includeArchived`
+parameter for picker-style views (§11) — a filter on presentation, never on the arithmetic.
 
 #### Principle: no physical deletion
 
 > **Entities that operations may reference are never physically deleted.** Categories are
-> soft-deleted (§4.7); accounts are archived. The only true deletion in the system is deleting
-> an entire workspace.
+> soft-deleted (§4.7); accounts are archived; workspaces carry a `DELETED` status (§4.1.1,
+> revised at M1 — deletion used to be physical). **Anchors are the sole physical deletion in
+> the system** (§10.4), and nothing references an anchor.
 
 This removes cascade rules and dangling references as a class of problem. It also means the
 source's orphaned-transfer-leg situation — where one side points at a deleted account and is
@@ -704,8 +820,14 @@ any other field: by recording a new version.
 
 Event sourcing is kept, labelled **learning-driven**.
 
-**Decision: strict event sourcing, across all entities.** Events are the only thing written
-directly; projection tables are derived and may be rebuilt from scratch at any time.
+**Decision: strict event sourcing, across all entities *inside* a workspace** — accounts,
+categories, operations, transfers, anchors. Events are the only thing written directly;
+projection tables are derived and may be rebuilt from scratch at any time.
+
+> **Revised at M1.** This previously read "across all entities". The workspace record is now
+> explicitly outside the event-sourced domain (§4.1.1): it is the tenant boundary that scopes
+> every event rather than an entity within it, and treating it as an aggregate made a rebuild
+> circular. Nothing else is exempt.
 
 The alternative — entity tables as primary storage with an append-only audit log alongside —
 was considered and rejected. It is roughly half the moving parts, but it is an ordinary
@@ -757,15 +879,32 @@ t_events(
   aggregate_id   uuid,
   event_type     text,          -- created | revised | cancelled
   payload        jsonb,         -- full resulting state (§4.4) + version
-  occurred_at    timestamp,
+  occurred_at    timestamp,     -- = recorded_at for events with no business date (see below)
   recorded_at    timestamp
 )
 ```
 
 Splitting by aggregate type buys nothing at this volume and costs global ordering.
 
+**`occurred_at` is `NOT NULL`, and equals `recorded_at` for events with no user-supplied business
+date.** Operations, transfer legs and anchors are dated by the user; renaming an account, moving a
+category or archiving one are not — but their business date genuinely *is* the moment they were
+recorded, which is the same rule §4.6 already states for anchors. This is a degenerate case, not a
+fabricated value.
+
+A nullable column was considered, on the grounds that "has no business date" and "business date
+happens to equal record time" are different facts. Rejected: nothing queries `t_events.occurred_at`
+(replay orders by `id`, statistics read the projection), so the distinction has no consumer, while
+the null costs null-handling in the row mapper, the envelope and every future reader.
+
+**The distinction is kept in Kotlin rather than in the column.** A payload with no business date
+does not carry an `occurredAt`, and the single place that writes the row falls back to
+`recorded_at`. A command therefore still cannot invent a business date, and readers still cannot
+meet a null.
+
 **Projection tables:** `t_accounts`, `t_categories`, `t_operations`, `t_anchors` — written only by the
-event handler.
+event handler. `t_workspaces` is **not** among them: it is authoritative, written directly, and
+never touched by a rebuild (§4.1.1).
 
 ### 4.12 Identifiers
 
@@ -815,11 +954,21 @@ transfers table — contradicts reading everything through `/operations`.
 
 **`accounts`** — `name`, `currency`, `icon`, `archived`. No stored balance (§4.6).
 
+**`workspaces`** — not a projection at all: an authoritative table (§4.1.1) carrying `name`,
+`status`, `default_currency` and `deleted_at` (what the retention job queries).
+
 **`categories`** — `name`, `icon`, `parent_id`, `kind`, `deleted`, `system`.
 `kind` is derivable from the branch but stored anyway — cheaper than walking to the root on
 every query. `system` protects the roots and both `Others` from modification.
 
-Every table carries `workspace_id`.
+Every table carries `workspace_id`, as a real foreign key to `t_workspaces(id)` with
+`ON DELETE CASCADE` — an existence guard, and what lets the retention job (§4.1.1) reclaim a
+workspace in one statement.
+
+**There are no foreign keys *between* projection tables**, and that is deliberate: they hold
+derived data, so an FK would turn replay order into a schema-level constraint (categories before
+operations, parents before children) to buy a guarantee that command-time validation (§4.10)
+already provides.
 
 ### 4.13.1 Database naming convention
 
@@ -836,6 +985,7 @@ convention only. `flyway_schema_history` is Flyway's own and keeps its name.
 | `t_operations(workspace_id, category_id)` | Category breakdown |
 | `t_anchors(workspace_id, account_id, occurred_at)` | Finding the nearest preceding anchor |
 | `t_events(workspace_id, id)` | Full rebuild in order |
+| `t_events(workspace_id, aggregate_id, id)` | Reading an aggregate's previous payload — only needed when no-op revision suppression (§4.4) lands |
 
 ---
 
@@ -845,12 +995,12 @@ convention only. `flyway_schema_history` is Flyway's own and keeps its name.
 
 `POST /workspaces/{workspaceId}/import` — a single request carrying the whole payload.
 
-The workspace must be in `DRAFT` (§4.1.1); the request is rejected otherwise. `importId` is
+The workspace must be in `NEW` (§4.1.1); the request is rejected otherwise. `importId` is
 returned in the response.
 
 **One request, sections inside the body** — not a multi-step protocol. Atomicity is the
 deciding argument: a transaction spanning one request is obvious, one spanning a sequence of
-calls is not, and §4.1.1 requires a failed import to leave a genuinely empty `DRAFT`.
+calls is not, and §4.1.1 requires a failed import to leave a genuinely empty `NEW`.
 Processing order is Core's business, since Core knows the dependencies.
 
 **Sections:**
@@ -1266,6 +1416,7 @@ All under `/workspaces/{workspaceId}/`.
 
 | Resource | Notes |
 |---|---|
+| `/workspaces` | Create, rename, activate, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) |
 | `/accounts` | CRUD; `DELETE` archives rather than deletes (§4.8) |
 | `/accounts/{id}/anchors` | `POST` to create, `DELETE` to remove — see below |
 | `/categories` | CRUD; `DELETE` is a soft delete (§4.7) |
@@ -1277,6 +1428,10 @@ All under `/workspaces/{workspaceId}/`.
 `DELETE /operations/{id}` **cancels** the operation. A cancelled operation disappears from
 listings and statistics entirely — it is not shown struck through. Filtering it out of every
 query by hand would be error-prone.
+
+`DELETE /workspaces/{id}` is likewise a status change (§4.1.1). A deleted workspace is absent
+from listings and returns 404 — not 410, so that its existence is not disclosed to a caller who
+cannot use it, which is what an ownership failure will return too (§7.4).
 
 Version history is retained in the event store but is **not exposed in the MVP**. A
 `GET /operations/{id}/history` endpoint is cheap to add later, but the UI for it is not

@@ -49,12 +49,18 @@ events, and the projection rows are identical.
 ### Workspace
 
 - [ ] **1.1** Migration: `workspaces` (UUID PK, name/slug, `status`, `default_currency`)
-- [ ] **1.2** Create workspace → `DRAFT`; seed the four system categories in the same
+- [ ] **1.2** Create workspace → `NEW`; seed the four system categories in the same
       transaction (§4.7): both roots, both `Others`
 - [ ] **1.3** Emptiness check as a single reusable function scanning every table carrying
       `workspace_id` (§4.2)
-- [ ] **1.4** `DRAFT → ACTIVE` transitions: "start empty" action, and the hook import will use
-- [ ] **1.5** Delete workspace (the only true deletion in the system)
+- [ ] **1.4** Status transitions (§4.1.1): `NEW → ACTIVE` ("start empty" action, and the hook
+      import will use), `ACTIVE ↔ ARCHIVED`, `→ DELETED`; `ARCHIVED` read-only enforced once at
+      the command entry point
+- [ ] **1.5** Delete workspace — soft, a `DELETED` status; anchors remain the only physical
+      deletion in the system
+- [ ] **1.5b** Retention job: hard-delete workspaces `DELETED` longer than a configurable
+      window (default 30 days), one transaction each, via `ON DELETE CASCADE`. Refuses a
+      non-positive window; the cutoff is a parameter so the test need not wait a month
 - [ ] **1.6** `workspace_id` enforced on every query — decide the mechanism now (explicit
       parameter vs. a repository-level guard) and apply it consistently
 
@@ -78,7 +84,9 @@ events, and the projection rows are identical.
 ### Operations, transfers, anchors
 
 - [ ] **1.16** Extend `operations` projection with the full field set (§4.13)
-- [ ] **1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2)
+- [ ] **1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2).
+      A revise with an unchanged body still appends an event at M1 — suppression is deferred
+      (§4.4)
 - [ ] **1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing
       `transfer_id`, each pointing at the other via `counterpart_id`
 - [ ] **1.19** Reject `PUT /operations/{id}` on a transfer leg (§10.3)
@@ -157,14 +165,14 @@ Validating inside a handler is too late.
 - [ ] **2.18** `POST /workspaces/{id}/import` — one request, sections in body (§5.1). No
       `anchors` section from the source apart from opening balances; imported balance
       assignments arrive via 2.10b
-- [ ] **2.19** Reject import into a non-`DRAFT` workspace
+- [ ] **2.19** Reject import into a non-`NEW` workspace
 - [ ] **2.20** External-id → internal-id mapping during import
 - [ ] **2.21** Hard failure on unresolvable references
 - [ ] **2.22** Atomicity: whole import in one transaction; failure leaves a genuinely empty
-      `DRAFT`
+      `NEW`
 - [ ] **2.23** Import optimisation: append events, then rebuild once (§4.10)
 - [ ] **2.24** `importId` in the response; import job record
-- [ ] **2.25** HTTP upload transport; `DRAFT → ACTIVE` on success
+- [ ] **2.25** HTTP upload transport; `NEW → ACTIVE` on success
 - [ ] **2.26** End-to-end test: real dump → populated workspace
 
 ---
@@ -198,6 +206,8 @@ Highest estimation risk: the only milestone with no existing code to lean on.
 - [ ] **4.1 [spike]** Chart library choice, driven by range-selection-on-chart (§11.3)
 - [ ] **4.2** Frontend skeleton, generated API types from 3.14
 - [ ] **4.3** Workspace list, create, import screen (drag & drop)
+- [ ] **4.3b** Workspace lifecycle UI: archive / unarchive prominent; delete hidden in settings,
+      warned as unrecoverable, confirmed by typing the workspace name (§4.1.1)
 - [ ] **4.4** Accounts screen with balances
 - [ ] **4.5** Operations feed; transfers shown as one thing with a jump to the counterpart
 - [ ] **4.6** Add / edit / delete operation, including retrospective `occurred_at`

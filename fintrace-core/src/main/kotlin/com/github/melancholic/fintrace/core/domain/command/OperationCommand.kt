@@ -16,10 +16,10 @@ data class ReviseOperationCommand(
     override val workspaceId: UUID,
     override val occurredAt: LocalDateTime,
     // TODO: TBD
-) : OperationCommand<Unit>, CreateCommand<Unit>
+) : OperationCommand<Unit>, ReviseCommand<Unit>
 
 data class CancelOperationCommand(
     override val workspaceId: UUID,
     override val occurredAt: LocalDateTime,
     // TODO: TBD
-) : OperationCommand<Unit>, CreateCommand<Unit>
+) : OperationCommand<Unit>, CancelCommand<Unit>

@@ -94,7 +94,8 @@ handlers were not idempotent and a stray direct write happened somewhere.
 
 The rest of the entities on the M0 foundation.
 
-- Workspaces with `DRAFT` / `ACTIVE` lifecycle (§4.1.1), including the emptiness check
+- Workspaces with the `NEW` / `ACTIVE` / `ARCHIVED` / `DELETED` lifecycle (§4.1.1), including
+  the emptiness check and the system-wide read-only guard
 - Accounts, archiving
 - Categories: adjacency-list tree, system roots and both `Others`, soft delete, cycle and
   branch-move validation
@@ -170,7 +171,7 @@ remains valuable, but as a check rather than the only safety net.
 
 - Port the interpreter; keep the source's own quirks contained here (§3.2)
 - Run the existing 22 tests and `test-scenario.md` as a conformance suite
-- Import contract (§5.1), atomic, into a `DRAFT` workspace
+- Import contract (§5.1), atomic, into a `NEW` workspace
 - Import optimisation: write events, then rebuild once, rather than replaying 6k events
   individually
 
