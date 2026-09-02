@@ -1,0 +1,9 @@
+deploy/.env
+
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+.idea/
+*.iml
+.kotlin/
