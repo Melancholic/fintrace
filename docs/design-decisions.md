@@ -1,7 +1,7 @@
 # fintrace — Design Decision Record
 
-**Status:** pre-implementation design phase
-**Date:** 2026-08-29
+**Status:** design settled; M0 implemented against it (see `plans/M0.md`)
+**Date:** 2026-08-29, schema names and event kinds revised during M0
 **Author:** (owner / sole developer)
 
 This document records decisions made during the architecture discussion, the reasoning
@@ -431,8 +431,8 @@ field (`origin`, `external_ref`), not a separate class of entity with different 
 
 **Decision: events carry the complete resulting state of the entity, not a diff.**
 
-Three universal event kinds are enough for the MVP: *created*, *superseded by a new
-version*, *voided*.
+Three universal event kinds are enough for the MVP: *created*, *revised* (replaced by a new
+version), *cancelled*.
 
 Explicitly **not** copying MoneyOK's model here. Its delta encoding plus intent gates is
 precisely what makes the current bot hard to get right. Full-state events mean applying an
@@ -464,7 +464,7 @@ transfers stop being a special case.
 
 **Price accepted:**
 
-- The pair is an invariant: create, supersede and void must always affect both entries.
+- The pair is an invariant: create, revise and cancel must always affect both entries.
   Enforced in one place in the domain layer.
 - The UI presents a transfer as one thing, so the two entries are joined back on read.
 
@@ -750,12 +750,12 @@ solve back-dating — §6 does.
 A single events table for all aggregates:
 
 ```
-events(
-  id             bigserial,     -- global ordering, used by rebuild
+t_events(
+  id             bigint,        -- GENERATED ALWAYS AS IDENTITY; global ordering, used by rebuild
   workspace_id   uuid,
   aggregate_type text,          -- account | category | operation | transfer | anchor
   aggregate_id   uuid,
-  event_type     text,          -- created | superseded | voided
+  event_type     text,          -- created | revised | cancelled
   payload        jsonb,         -- full resulting state (§4.4) + version
   occurred_at    timestamp,
   recorded_at    timestamp
@@ -764,7 +764,7 @@ events(
 
 Splitting by aggregate type buys nothing at this volume and costs global ordering.
 
-**Projection tables:** `accounts`, `categories`, `operations`, `anchors` — written only by the
+**Projection tables:** `t_accounts`, `t_categories`, `t_operations`, `t_anchors` — written only by the
 event handler.
 
 ### 4.12 Identifiers
@@ -774,8 +774,8 @@ event handler.
 sequence would, without giving up UUID properties. Postgres 18 provides `uuidv7()` natively;
 earlier versions need a library.
 
-**The reason is rebuildability, not unguessability.** With `bigserial` the database assigns
-the id, so the order becomes: insert into the projection, get the id, then write the event —
+**The reason is rebuildability, not unguessability.** With a database-assigned id the order
+becomes: insert into the projection, get the id, then write the event —
 backwards for ES. Worse, a full rebuild (§4.10) would assign *different* numbers, breaking
 every inter-entity reference stored in earlier events. With UUIDs the id is generated in code,
 travels inside the event, and a rebuild reproduces exactly the same ids.
@@ -821,15 +821,21 @@ every query. `system` protects the roots and both `Others` from modification.
 
 Every table carries `workspace_id`.
 
+### 4.13.1 Database naming convention
+
+`t_` for tables, `v_` for views, `idx_` for indexes — `t_events`, `t_operations`,
+`idx_t_events_workspace_id_id`. Kotlin names stay unprefixed; the prefix is a database-side
+convention only. `flyway_schema_history` is Flyway's own and keeps its name.
+
 ### 4.14 Indexes
 
 | Index | Serves |
 |---|---|
-| `operations(workspace_id, occurred_at)` | All period statistics |
-| `operations(workspace_id, account_id, occurred_at)` | Balance calculation from an anchor |
-| `operations(workspace_id, category_id)` | Category breakdown |
-| `anchors(workspace_id, account_id, occurred_at)` | Finding the nearest preceding anchor |
-| `events(workspace_id, id)` | Full rebuild in order |
+| `t_operations(workspace_id, occurred_at)` | All period statistics |
+| `t_operations(workspace_id, account_id, occurred_at)` | Balance calculation from an anchor |
+| `t_operations(workspace_id, category_id)` | Category breakdown |
+| `t_anchors(workspace_id, account_id, occurred_at)` | Finding the nearest preceding anchor |
+| `t_events(workspace_id, id)` | Full rebuild in order |
 
 ---
 
@@ -1268,7 +1274,7 @@ All under `/workspaces/{workspaceId}/`.
 
 ### 10.2 Deletion semantics
 
-`DELETE /operations/{id}` **voids** the operation. A voided operation disappears from
+`DELETE /operations/{id}` **cancels** the operation. A cancelled operation disappears from
 listings and statistics entirely — it is not shown struck through. Filtering it out of every
 query by hand would be error-prone.
 

@@ -84,7 +84,7 @@ working as a whole rather than as parts.
 - Postgres, schema for `events` + `operations`, migrations
 - Command → event → handler → projection path, in one transaction
 - **The full-rebuild procedure**, sharing the handler with the online path (§4.10)
-- The rebuild-equality test: rebuild, assert projection is byte-identical
+- The rebuild-equality test: rebuild, assert the projection rows are identical
 - Docker Compose skeleton, `TZ` pinned explicitly (§6.4)
 
 **Why the rebuild belongs here and not later:** written after the fact, it usually turns out

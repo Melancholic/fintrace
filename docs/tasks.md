@@ -16,28 +16,29 @@ with no deliverable code.
 
 **Goal:** one operation, end to end, with the ES machinery working as a whole.
 
-- [ ] **0.1** Kotlin + Spring Boot project skeleton, Gradle, package structure
-- [ ] **0.2** Docker Compose: Postgres + Core. Pin `TZ` explicitly on both (§6.4)
-- [ ] **0.3** Migration tool wired up (Flyway or Liquibase), empty baseline migration
-- [ ] **0.4** Migration: `events` table per §4.11, with `events(workspace_id, id)` index
-- [ ] **0.5** Migration: minimal `operations` projection table (§4.13) — signed `amount`,
-      `occurred_at`, `recorded_at`, UUID PK
-- [ ] **0.6** UUIDv7 generation — native `uuidv7()` if on PG 18, otherwise pick a library
-- [ ] **0.7** Event payload envelope: `version` field, JSONB serialisation, round-trip test
-- [ ] **0.8** `CreateOperation` command → validation → event append → handler → projection,
-      all in one transaction
-- [ ] **0.9** `POST /workspaces/{id}/operations` + `GET /workspaces/{id}/operations`, enough
-      to exercise 0.8 by curl
-- [ ] **0.10** **Single** identity-resolution point returning a fixed stub — the one slot real
-      auth fills later (§7.4). One place, because the CLI (M7) arrives as a second client
-- [ ] **0.11** **Full-rebuild procedure**: clear projection for a workspace, replay events in
-      `id` order through *the same handler* as the online path
-- [ ] **0.12** Rebuild-equality test: create N operations, snapshot projection, rebuild,
-      assert identical
-- [ ] **0.13** Integration test setup (Testcontainers) so 0.12 runs against real Postgres
+- [x] ~~**0.1** Kotlin + Spring Boot project skeleton, Gradle, package structure~~
+- [x] ~~**0.2** Docker Compose: Postgres + Core. Pin `TZ` explicitly on both (§6.4)~~
+- [x] ~~**0.3** Migration tool wired up (Flyway or Liquibase), empty baseline migration~~
+- [x] ~~**0.4** Migration: `events` table per §4.11, with `events(workspace_id, id)` index~~
+- [x] ~~**0.5** Migration: minimal `operations` projection table (§4.13) — signed `amount`,~~
+      ~~`occurred_at`, `recorded_at`, UUID PK~~
+- [x] ~~**0.6** UUIDv7 generation **in application code**, never a database default — a rebuild~~
+      ~~must reproduce the same ids (§4.12). JUG, since the JDK has no v7 factory~~
+- [x] ~~**0.7** Event payload envelope: `version` field, JSONB serialisation, round-trip test~~
+- [x] ~~**0.8** `CreateOperation` command → validation → event append → handler → projection,~~
+      ~~all in one transaction~~
+- [x] ~~**0.9** `POST /workspaces/{id}/operations` + `GET /workspaces/{id}/operations`, enough~~
+      ~~to exercise 0.8 by curl~~
+- [x] ~~**0.10** **Single** identity-resolution point returning a fixed stub — the one slot real~~
+      ~~auth fills later (§7.4). One place, because the CLI (M7) arrives as a second client~~
+- [x] ~~**0.11** **Full-rebuild procedure**: clear projection for a workspace, replay events in~~
+      ~~`id` order through *the same handler* as the online path~~
+- [x] ~~**0.12** Rebuild-equality test: create N operations, snapshot projection, rebuild,~~
+      ~~assert identical~~
+- [x] ~~**0.13** Integration test setup (Testcontainers) so 0.12 runs against real Postgres~~
 
 **Done when:** you can create operations over HTTP, wipe the projection, rebuild it from
-events, and the result is byte-identical.
+events, and the projection rows are identical.
 
 ---
 
@@ -77,8 +78,8 @@ events, and the result is byte-identical.
 ### Operations, transfers, anchors
 
 - [ ] **1.16** Extend `operations` projection with the full field set (§4.13)
-- [ ] **1.17** Operation supersede and void commands; voided disappears from listings (§10.2)
-- [ ] **1.18** Transfer create/update/void → two linked legs, atomically, sharing
+- [ ] **1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2)
+- [ ] **1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing
       `transfer_id`, each pointing at the other via `counterpart_id`
 - [ ] **1.19** Reject `PUT /operations/{id}` on a transfer leg (§10.3)
 - [ ] **1.20** `/transfers` write endpoints; transfer legs readable via `/operations`
@@ -99,14 +100,14 @@ Validating inside a handler is too late.
 
 **Highest risk. Start early. The [spike] tasks come first and may change everything after.**
 
-- [x] **2.1–2.3 [spike]** Dump inspection — **done**, results in §2.3–2.4 of
-      `design-decisions.md`. No `type = 110`, no file attachments, no category deletions, no
-      uncategorised operations. 2899 operation updates and 80 undated balance assignments are
-      the real work.
-- [x] **2.4 [spike]** Read `StatisticsProvider.kt` — **done. It is a port, not a rewrite.**
-      The first `when` block plus all `applyX` methods are the interpreter and port as-is; the
-      second `when` block and everything around `stateByDate` is statistics and is deleted.
-      See the M2 section of `roadmap.md`
+- [x] ~~**2.1–2.3 [spike]** Dump inspection — **done**, results in §2.3–2.4 of~~
+      ~~`design-decisions.md`. No `type = 110`, no file attachments, no category deletions, no~~
+      ~~uncategorised operations. 2899 operation updates and 80 undated balance assignments are~~
+      ~~the real work.~~
+- [x] ~~**2.4 [spike]** Read `StatisticsProvider.kt` — **done. It is a port, not a rewrite.**~~
+      ~~The first `when` block plus all `applyX` methods are the interpreter and port as-is; the~~
+      ~~second `when` block and everything around `stateByDate` is statistics and is deleted.~~
+      ~~See the M2 section of `roadmap.md`~~
 
 ### Importer service
 
