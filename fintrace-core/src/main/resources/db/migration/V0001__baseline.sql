@@ -1,0 +1,2 @@
+-- Reserved empty migration.
+-- "migrations are wired up and ran" is verifiable before any DDL exists.
