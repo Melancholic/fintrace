@@ -1,7 +1,9 @@
 package com.github.melancholic.fintrace.core.facade
 
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
+import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -10,7 +12,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -101,6 +103,66 @@ class AdminFacadeReplayTest(
 		adminFacade.replayWorkspace(UUID.randomUUID())
 
 		assertEquals(0, operations(WORKSPACE).size)
+	}
+
+	@Test
+	fun `replays a revision onto the same row`() {
+		val id = create()
+		commandFacade.processCommand(
+			ReviseOperationCommand(
+				workspaceId = WORKSPACE, operationId = id,
+				occurredAt = OCCURRED_AT, amount = BigDecimal("777.0000"),
+			)
+		)
+		val before = operations(WORKSPACE)
+
+		jdbc.sql("DELETE FROM t_operations").update()
+		adminFacade.replayWorkspace(WORKSPACE)
+
+		// Two events, one row: the create inserts and the revision overwrites, which only holds
+		// if applying an event is an upsert rather than an insert.
+		assertEquals(before, operations(WORKSPACE))
+		assertEquals(1, operations(WORKSPACE).size)
+		assertEquals(BigDecimal("777.0000"), operations(WORKSPACE).single().amount)
+	}
+
+	@Test
+	fun `replays a cancellation as an absent row`() {
+		val id = create()
+		commandFacade.processCommand(
+			CancelOperationCommand(workspaceId = WORKSPACE, operationId = id, occurredAt = OCCURRED_AT)
+		)
+
+		jdbc.sql("DELETE FROM t_operations").update()
+		adminFacade.replayWorkspace(WORKSPACE)
+
+		// The log still holds both events; the rebuilt projection must not hold the row.
+		assertEquals(2, eventIds().size)
+		assertTrue(operations(WORKSPACE).isEmpty(), "a cancelled operation must not come back")
+	}
+
+	@Test
+	fun `rebuilds a mixed history identically`() {
+		val revised = create(amount = "10.0000")
+		val cancelled = create(amount = "20.0000")
+		create(amount = "30.0000")
+		commandFacade.processCommand(
+			ReviseOperationCommand(
+				workspaceId = WORKSPACE, operationId = revised,
+				occurredAt = BACK_DATED, amount = BigDecimal("11.0000"),
+			)
+		)
+		commandFacade.processCommand(
+			CancelOperationCommand(
+				workspaceId = WORKSPACE, operationId = cancelled, occurredAt = OCCURRED_AT,
+			)
+		)
+		val before = operations(WORKSPACE)
+
+		adminFacade.replayWorkspace(WORKSPACE)
+
+		assertEquals(before, operations(WORKSPACE))
+		assertEquals(2, before.size, "sanity: one of the three was cancelled")
 	}
 
 	@Test

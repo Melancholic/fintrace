@@ -4,14 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-**M0 complete** (tasks 0.1–0.13 — see `docs/plans/M0.md`); **M1 is next**, per `docs/tasks.md`.
-`fintrace-core` runs one operation end to end: `POST`/`GET
-/api/v1/workspaces/{workspaceId}/operations[/{operationId}]` → `CommandFacade.processCommand` →
-dispatcher → handler → event + projection, in one transaction; and
-`POST /admin/api/v1/workspaces/{id}/replay` clears the projection and rebuilds it from the event
-log. Only Core exists — the importer, BFF and web are later milestones.
+**M0 complete** (tasks 0.1–0.13 — see `docs/plans/M0.md`); **M1 in progress**, per
+`docs/plans/M1.md` and `docs/tasks.md`.
 
-Verify with `./gradlew clean test` (53 tests). Prefer `clean` — incremental builds have twice
+`fintrace-core` runs the operation aggregate end to end — create, revise and cancel:
+`POST` / `GET` / `PUT` / `DELETE /api/v1/workspaces/{workspaceId}/operations[/{operationId}]` →
+`CommandFacade.processCommand` → dispatcher → handler → event + projection, in one transaction;
+and `POST /admin/api/v1/workspaces/{id}/replay` clears the projection and rebuilds it from the
+event log. Only Core exists — the importer, BFF and web are later milestones.
+
+**Done in M1 so far:** task 1.17 (revise / cancel, with the cancelled row removed rather than
+flagged) plus its HTTP surface, and command-time validation — the operation must exist in the
+command's workspace, and `occurredAt` may not be in the future. **Not yet started:** everything
+workspace-, account-, category-, transfer- and anchor-shaped (1.1–1.16, 1.18–1.26), so
+`t_workspaces` still does not exist and `workspace_id` remains an unconstrained `uuid`.
+
+Two agreed shapes from `docs/plans/M1.md` are **not** implemented yet, both deliberately deferred
+rather than rejected: the `occurredAt` split (every command still declares one, so cancel carries
+a business date it has no use for), and `ProjectionChange` / `ProjectionApplier` — a deletion is
+currently modelled as a `DeleteOperationProjection`, so handlers still call the projection DAO
+directly and `AdminFacade` keeps a `when` that gains a branch per aggregate.
+
+Verify with `./gradlew clean test` (95 tests). Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
 **Not yet enforced, and assumed by nothing:** workspace *ownership* (any authenticated caller can

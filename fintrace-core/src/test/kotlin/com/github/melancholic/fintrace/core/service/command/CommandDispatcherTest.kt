@@ -2,11 +2,12 @@ package com.github.melancholic.fintrace.core.service.command
 
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
+import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
 import com.github.melancholic.fintrace.core.service.command.handler.CommandHandler
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.reflect.KClass
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -16,7 +17,7 @@ class CommandDispatcherTest {
 
 	private class RecordingHandler(
 		private val result: UUID,
-	) : CommandHandler<CreateOperationCommand, UUID> {
+	) : CommandHandler<CreateOperationCommand, UUID, EventPayload> {
 		override val commandType: KClass<out CreateOperationCommand> = CreateOperationCommand::class
 		var received: CreateOperationCommand? = null
 
@@ -44,7 +45,13 @@ class CommandDispatcherTest {
 		val dispatcher = CommandDispatcherImpl(listOf(RecordingHandler(UUID.randomUUID())))
 
 		val failure = assertFailsWith<IllegalArgumentException> {
-			dispatcher.dispatch(CancelOperationCommand(UUID.randomUUID(), LocalDateTime.now()))
+			dispatcher.dispatch(
+				CancelOperationCommand(
+					workspaceId = UUID.randomUUID(),
+					operationId = UUID.randomUUID(),
+					occurredAt = LocalDateTime.now(),
+				)
+			)
 		}
 
 		assertEquals(true, failure.message?.contains("CancelOperationCommand"), failure.message)

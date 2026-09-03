@@ -1,8 +1,8 @@
 package com.github.melancholic.fintrace.core.facade
 
 import com.github.melancholic.fintrace.core.dao.EventsDAO
-import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
+import com.github.melancholic.fintrace.core.domain.projection.DeleteOperationProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,7 +25,8 @@ class AdminFacadeImpl(
         events.map { it.payload.asProjection() }
             .forEach {
                 when (it) {
-                    is OperationProjection -> operationProjectionDAO.create(it)
+                    is OperationProjection -> operationProjectionDAO.createOrUpdate(it)
+                    is DeleteOperationProjection -> operationProjectionDAO.remove(it.workspaceId, it.id)
                 }
             }
     }

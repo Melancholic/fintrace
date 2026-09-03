@@ -1,37 +1,36 @@
 package com.github.melancholic.fintrace.core.domain.event.payload
 
-import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
-import java.math.BigDecimal
+import com.github.melancholic.fintrace.core.domain.projection.DeleteOperationProjection
 import java.time.LocalDateTime
 import java.util.*
 
-sealed interface CreatedOperationEventPayload : OperationEventPayload
+sealed interface OperationCanceled : OperationEventPayload {
+    override fun asProjection(): DeleteOperationProjection
+}
 
 /**
  * WARNING: Shouldn't be changed ever. 
  * In case of any changes required, have to create a next version of entity.
  */
-data class CreatedOperationEventPayloadV1(
+data class OperationCanceledV1(
     override val id: UUID,
-    val workspaceId: UUID,
-    val amount: BigDecimal,
+    override val workspaceId: UUID,
+    override val version: Int = VERSION,
     override val occurredAt: LocalDateTime,
     override val recordedAt: LocalDateTime,
-    override val version: Int = VERSION,
-) : CreatedOperationEventPayload {
+) : OperationCanceled {
 
-    override fun asProjection(): OperationProjection {
-        return OperationProjection(
+    override fun asProjection(): DeleteOperationProjection {
+        return DeleteOperationProjection(
             id = id,
             workspaceId = workspaceId,
-            amount = amount,
             occurredAt = occurredAt,
             recordedAt = recordedAt
         )
     }
 
     companion object {
-        const val TYPE = "operation.created.v1"
+        const val TYPE = "operation.canceled.v1"
         const val VERSION = 1
     }
 }

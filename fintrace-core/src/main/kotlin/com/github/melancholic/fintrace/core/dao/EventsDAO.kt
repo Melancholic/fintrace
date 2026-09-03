@@ -21,7 +21,6 @@ interface EventsDAO {
     fun loadAll(workspaceId: UUID): List<Event>
 }
 
-@Suppress("UNCHECKED_CAST")
 @Repository
 class EventsDAOImpl(
     private val jdbc: JdbcClient,
@@ -35,6 +34,7 @@ class EventsDAOImpl(
         eventType: EventType,
         payload: EventPayload
     ): Event {
+
         val id = jdbc.sql(INSERT)
             .param("workspaceId", workspaceId)
             .param("aggregateType", entityType.name)

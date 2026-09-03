@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
@@ -39,13 +39,18 @@ class CommandFacadeTransactionTest(
 		@Bean
 		@Primary
 		fun failingOperationProjectionDAO() = object : OperationProjectionDAO {
-			override fun create(projection: OperationProjection): UUID = throw ProjectionFailed()
+			override fun createOrUpdate(projection: OperationProjection): UUID = throw ProjectionFailed()
 
 			// Unused here — this class only exercises the write path's rollback.
 			override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection =
 				throw UnsupportedOperationException()
 
 			override fun removeAll(workspaceId: UUID) = throw UnsupportedOperationException()
+
+			override fun remove(workspaceId: UUID, id: UUID) = throw UnsupportedOperationException()
+
+			override fun exists(workspaceId: UUID, operationId: UUID): Boolean =
+				throw UnsupportedOperationException()
 		}
 	}
 

@@ -8,10 +8,14 @@ import java.util.*
 @ResponseStatus(value = HttpStatus.NOT_FOUND)
 class NotFoundEntityException(message: String = "Entity not found") : RuntimeException(message)
 
+@ResponseStatus(value = HttpStatus.BAD_REQUEST)
+class ValidationError(message: String = "Validation error")  : RuntimeException(message)
+
+
 // SECURITY EXCEPTIONS
 @ResponseStatus(value = HttpStatus.UNAUTHORIZED)
 class NotAuthenticatedException : RuntimeException("Not authenticated")
 
 @ResponseStatus(value = HttpStatus.FORBIDDEN)
-class WorkspaceNotPermitter(userId: String, workspaceId: UUID) :
+class WorkspaceNotPermitted(userId: String, workspaceId: UUID) :
     RuntimeException("User $userId not permitted to workspace '$workspaceId'")

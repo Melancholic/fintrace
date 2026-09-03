@@ -1,14 +1,16 @@
 package com.github.melancholic.fintrace.core.domain.event
 
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
-import com.github.melancholic.fintrace.core.domain.event.payload.CreatedOperationEventPayloadV1
+import com.github.melancholic.fintrace.core.domain.event.payload.OperationCanceledV1
+import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
+import com.github.melancholic.fintrace.core.domain.event.payload.OperationRevisedV1
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.json.JsonTest
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 
 /**
@@ -18,12 +20,27 @@ import kotlin.test.assertEquals
 @JsonTest
 class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper) {
 
-	private val payload = CreatedOperationEventPayloadV1(
-		id = UUID.fromString("0199a1c2-3d4e-7f80-8123-456789abcdef"),
-		workspaceId = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001"),
+	private val payload = OperationCreatedV1(
+		id = OPERATION_ID,
+		workspaceId = WORKSPACE_ID,
 		amount = BigDecimal("-1234.5600"),
-		occurredAt = LocalDateTime.parse("2026-03-15T14:30:00"),
-		recordedAt = LocalDateTime.parse("2026-03-16T09:00:00"),
+		occurredAt = OCCURRED_AT,
+		recordedAt = RECORDED_AT,
+	)
+
+	private val revised = OperationRevisedV1(
+		id = OPERATION_ID,
+		workspaceId = WORKSPACE_ID,
+		amount = BigDecimal("-99.0000"),
+		occurredAt = OCCURRED_AT,
+		recordedAt = RECORDED_AT,
+	)
+
+	private val canceled = OperationCanceledV1(
+		id = OPERATION_ID,
+		workspaceId = WORKSPACE_ID,
+		occurredAt = OCCURRED_AT,
+		recordedAt = RECORDED_AT,
 	)
 
 	@Test
@@ -38,11 +55,32 @@ class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper)
 	}
 
 	@Test
+	fun `round-trips every payload kind`() {
+		listOf<EventPayload>(payload, revised, canceled).forEach {
+			assertEquals(it, mapper.readValue(mapper.writeValueAsString(it), EventPayload::class.java))
+		}
+	}
+
+	@Test
 	fun `carries a discriminator and a version`() {
 		val json = mapper.readTree(mapper.writeValueAsString(payload))
 
-		assertEquals(CreatedOperationEventPayloadV1.TYPE, json.get("type").asString())
+		assertEquals(OperationCreatedV1.TYPE, json.get("type").asString())
 		assertEquals(1, json.get("version").asInt())
+	}
+
+	@Test
+	fun `gives each payload kind its own discriminator`() {
+		// The three are structurally similar, so only the discriminator tells a stored row what
+		// it is. A collision here would deserialise a cancellation as a revision on rebuild.
+		val discriminators = listOf<EventPayload>(payload, revised, canceled)
+			.map { mapper.readTree(mapper.writeValueAsString(it)).get("type").asString() }
+
+		assertEquals(
+			listOf(OperationCreatedV1.TYPE, OperationRevisedV1.TYPE, OperationCanceledV1.TYPE),
+			discriminators,
+		)
+		assertEquals(3, discriminators.toSet().size, "discriminators must be distinct")
 	}
 
 	@Test
@@ -50,7 +88,7 @@ class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper)
 		val restored = mapper.readValue(
 			mapper.writeValueAsString(payload),
 			EventPayload::class.java,
-		) as CreatedOperationEventPayloadV1
+		) as OperationCreatedV1
 
 		// compareTo would pass on a silent scale change; equals would not. Money must survive
 		// the round trip exactly, so assert the stronger property.
@@ -66,5 +104,12 @@ class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper)
 		// neither an appended zone nor a re-anchored epoch number.
 		assertEquals("2026-03-15T14:30:00", json.get("occurredAt").asString())
 		assertEquals("2026-03-16T09:00:00", json.get("recordedAt").asString())
+	}
+
+	private companion object {
+		val OPERATION_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-456789abcdef")
+		val WORKSPACE_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
+		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
+		val RECORDED_AT: LocalDateTime = LocalDateTime.parse("2026-03-16T09:00:00")
 	}
 }

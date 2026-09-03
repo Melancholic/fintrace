@@ -12,8 +12,10 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -134,6 +136,131 @@ class OperationsRestControllerTest(
 	}
 
 	@Test
+	fun `revises an operation and answers with no content`() {
+		val id = createdId()
+
+		mvc.perform(reviseRequest(id, amount = "42.0000", occurredAt = "2021-05-05T10:00:00"))
+			.andExpect(status().isNoContent)
+			.andExpect(content().string(""))
+
+		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+			.andExpect(jsonPath("$.id").value(id.toString()))
+			.andExpect(jsonPath("$.amount").value(42.0000))
+			.andExpect(jsonPath("$.occurredAt").value("2021-05-05T10:00:00"))
+	}
+
+	@Test
+	fun `a revision replaces rather than adds`() {
+		val id = createdId()
+
+		mvc.perform(reviseRequest(id)).andExpect(status().isNoContent)
+
+		// The projection holds current state only; the history lives in the event log.
+		assertEquals(1, count())
+		assertEquals(2, eventCount())
+	}
+
+	@Test
+	fun `rejects a revision of an unknown operation`() {
+		mvc.perform(reviseRequest(UUID.randomUUID()))
+			.andExpect(status().isNotFound)
+
+		// Without the existence check the upsert would insert a row under a client-supplied id.
+		assertEquals(0, count())
+		assertEquals(0, eventCount())
+	}
+
+	@Test
+	fun `rejects a revision of an operation belonging to another workspace`() {
+		val id = createdId()
+		val otherWorkspace = "/api/v1/workspaces/${UUID.randomUUID()}/operations"
+
+		mvc.perform(
+			put("$otherWorkspace/$id").with(user(USER)).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON).content(body())
+		).andExpect(status().isNotFound)
+
+		// Indistinguishable from "no such operation" on purpose — an id you cannot reach and one
+		// that does not exist must give the same answer.
+		assertEquals(1, eventCount())
+	}
+
+	@Test
+	fun `rejects a revision dated in the future`() {
+		val id = createdId()
+
+		mvc.perform(reviseRequest(id, occurredAt = "2099-01-01T00:00:00"))
+			.andExpect(status().isBadRequest)
+
+		assertEquals(1, eventCount())
+	}
+
+	@Test
+	fun `rejects a malformed revision body`() {
+		val id = createdId()
+
+		mvc.perform(
+			put("$OPERATIONS_PATH/$id").with(user(USER)).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""{"amount":"not-a-number","occurredAt":"2026-03-15T14:30:00"}""")
+		).andExpect(status().isBadRequest)
+	}
+
+	@Test
+	fun `rejects an unauthenticated revision`() {
+		val id = createdId()
+
+		mvc.perform(
+			put("$OPERATIONS_PATH/$id").contentType(MediaType.APPLICATION_JSON).content(body())
+		).andExpect(status().isForbidden)
+
+		assertEquals(1, eventCount(), "nothing may be written for an unauthenticated caller")
+	}
+
+	@Test
+	fun `cancels an operation and answers with no content`() {
+		val id = createdId()
+
+		mvc.perform(cancelRequest(id))
+			.andExpect(status().isNoContent)
+			.andExpect(content().string(""))
+
+		// §10.2: a cancelled operation disappears entirely rather than being flagged.
+		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+			.andExpect(status().isNotFound)
+		assertEquals(0, count())
+		assertEquals(2, eventCount(), "the cancellation is recorded even though the row is gone")
+	}
+
+	@Test
+	fun `rejects cancelling the same operation twice`() {
+		val id = createdId()
+
+		mvc.perform(cancelRequest(id)).andExpect(status().isNoContent)
+		mvc.perform(cancelRequest(id)).andExpect(status().isNotFound)
+
+		assertEquals(2, eventCount(), "the second attempt writes nothing")
+	}
+
+	@Test
+	fun `rejects cancelling an unknown operation`() {
+		mvc.perform(cancelRequest(UUID.randomUUID()))
+			.andExpect(status().isNotFound)
+
+		assertEquals(0, eventCount())
+	}
+
+	@Test
+	fun `rejects an unauthenticated cancel`() {
+		val id = createdId()
+
+		mvc.perform(delete("$OPERATIONS_PATH/$id"))
+			.andExpect(status().isForbidden)
+
+		assertEquals(1, count(), "nothing may be removed for an unauthenticated caller")
+	}
+
+	@Test
 	fun `rejects an unauthenticated create`() {
 		mvc.perform(
 			post(OPERATIONS_PATH).contentType(MediaType.APPLICATION_JSON).content(body())
@@ -156,6 +283,27 @@ class OperationsRestControllerTest(
 		.with(csrf())
 		.contentType(MediaType.APPLICATION_JSON)
 		.content(body(amount, occurredAt))
+
+	private fun reviseRequest(
+		operationId: UUID,
+		amount: String = "-1234.5600",
+		occurredAt: String = "2026-03-15T14:30:00",
+	) = put("$OPERATIONS_PATH/$operationId")
+		.with(user(USER))
+		.with(csrf())
+		.contentType(MediaType.APPLICATION_JSON)
+		.content(body(amount, occurredAt))
+
+	private fun cancelRequest(operationId: UUID) = delete("$OPERATIONS_PATH/$operationId")
+		.with(user(USER))
+		.with(csrf())
+
+	private fun createdId(): UUID = UUID.fromString(
+		idOf(mvc.perform(createRequest()).andExpect(status().isCreated).andReturn().response.contentAsString)
+	)
+
+	private fun eventCount() = jdbc.sql("SELECT count(*) FROM t_events")
+		.query(Int::class.java).single()
 
 	private fun body(amount: String = "-1234.5600", occurredAt: String = "2026-03-15T14:30:00") =
 		"""{"amount":"$amount","occurredAt":"$occurredAt"}"""

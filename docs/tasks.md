@@ -84,7 +84,9 @@ events, and the projection rows are identical.
 ### Operations, transfers, anchors
 
 - [ ] **1.16** Extend `operations` projection with the full field set (§4.13)
-- [ ] **1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2).
+- [x] ~~**1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2)~~
+      — done ahead of order, with `PUT` / `DELETE` endpoints and command-time validation
+      (operation exists in this workspace; `occurredAt` not in the future).
       A revise with an unchanged body still appends an event at M1 — suppression is deferred
       (§4.4)
 - [ ] **1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing

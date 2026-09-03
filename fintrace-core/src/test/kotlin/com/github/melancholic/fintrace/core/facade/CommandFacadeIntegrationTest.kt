@@ -1,10 +1,11 @@
 package com.github.melancholic.fintrace.core.facade
 
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
-import com.github.melancholic.fintrace.core.domain.event.payload.CreatedOperationEventPayloadV1
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
+import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -18,9 +19,8 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -83,12 +83,12 @@ class CommandFacadeIntegrationTest(
 		facade.processCommand(command())
 
 		val json = mapper.readTree(event().payload)
-		assertEquals(CreatedOperationEventPayloadV1.TYPE, json.get("type").asString())
-		assertEquals(CreatedOperationEventPayloadV1.VERSION, json.get("version").asInt())
+		assertEquals(OperationCreatedV1.TYPE, json.get("type").asString())
+		assertEquals(OperationCreatedV1.VERSION, json.get("version").asInt())
 
 		// Deserialised as EventPayload — the way a rebuild will read it back, knowing only
 		// that the column holds some payload.
-		assertTrue(payload() is CreatedOperationEventPayloadV1)
+		assertTrue(payload() is OperationCreatedV1)
 	}
 
 	@Test
@@ -162,14 +162,74 @@ class CommandFacadeIntegrationTest(
 	}
 
 	@Test
-	fun `rejects a command with no registered handler, writing nothing`() {
-		// ReviseOperationCommand exists but has no handler yet (task 1.17).
-		assertFailsWith<IllegalArgumentException> {
-			facade.processCommand(ReviseOperationCommand(WORKSPACE_ID, OCCURRED_AT))
-		}
+	fun `revises an operation in place`() {
+		val id = facade.processCommand(command())
 
-		assertEquals(0, count("t_events"))
+		facade.processCommand(revise(id, amount = BigDecimal("250.0000")))
+
+		// A revision is a second event over the same aggregate, not a second operation: the
+		// projection holds current state only (§4.3).
+		assertEquals(2, count("t_events"))
+		assertEquals(1, count("t_operations"))
+		assertEquals(id, operation().id)
+		assertEquals(BigDecimal("250.0000"), operation().amount)
+	}
+
+	@Test
+	fun `classifies a revision and keeps the aggregate id`() {
+		val id = facade.processCommand(command())
+
+		facade.processCommand(revise(id))
+
+		val revision = events().last()
+		assertEquals("REVISED", revision.eventType)
+		assertEquals("OPERATION", revision.entityType)
+		assertEquals(id, revision.entityId, "the revision belongs to the operation it revises")
+	}
+
+	@Test
+	fun `a revision can move the business date`() {
+		val id = facade.processCommand(command())
+		val moved = LocalDateTime.parse("2019-07-04T12:00:00")
+
+		facade.processCommand(revise(id, occurredAt = moved))
+
+		// Correcting occurred_at is an ordinary edit, and the projection follows the latest event.
+		assertEquals(moved, operation().occurredAt)
+	}
+
+	@Test
+	fun `cancelling removes the row and keeps the log`() {
+		val id = facade.processCommand(command())
+
+		facade.processCommand(cancel(id))
+
+		// §10.2: a cancelled operation disappears entirely rather than being flagged, so no
+		// query has to remember to filter it out.
 		assertEquals(0, count("t_operations"))
+		assertEquals(2, count("t_events"))
+	}
+
+	@Test
+	fun `classifies a cancellation and keeps the aggregate id`() {
+		val id = facade.processCommand(command())
+
+		facade.processCommand(cancel(id))
+
+		val cancellation = events().last()
+		assertEquals("CANCELLED", cancellation.eventType)
+		assertEquals(id, cancellation.entityId, "the cancellation names the operation it cancels")
+	}
+
+	@Test
+	fun `cancelling one operation leaves the others alone`() {
+		val doomed = facade.processCommand(command())
+		val kept = facade.processCommand(command(amount = BigDecimal("7.0000")))
+
+		facade.processCommand(cancel(doomed))
+
+		assertEquals(1, count("t_operations"))
+		assertEquals(kept, operation().id)
 	}
 
 	private fun command(
@@ -177,6 +237,23 @@ class CommandFacadeIntegrationTest(
 		occurredAt: LocalDateTime = OCCURRED_AT,
 		amount: BigDecimal = BigDecimal("100.0000"),
 	) = CreateOperationCommand(workspaceId, occurredAt, amount)
+
+	private fun revise(
+		operationId: UUID,
+		workspaceId: UUID = WORKSPACE_ID,
+		occurredAt: LocalDateTime = OCCURRED_AT,
+		amount: BigDecimal = BigDecimal("200.0000"),
+	) = ReviseOperationCommand(
+		workspaceId = workspaceId, operationId = operationId, occurredAt = occurredAt, amount = amount,
+	)
+
+	private fun cancel(
+		operationId: UUID,
+		workspaceId: UUID = WORKSPACE_ID,
+		occurredAt: LocalDateTime = OCCURRED_AT,
+	) = CancelOperationCommand(
+		workspaceId = workspaceId, operationId = operationId, occurredAt = occurredAt,
+	)
 
 	private fun count(table: String) =
 		jdbc.sql("SELECT count(*) FROM $table").query(Int::class.java).single()
@@ -186,7 +263,9 @@ class CommandFacadeIntegrationTest(
 		.param("id", workspaceId)
 		.query(Int::class.java).single()
 
-	private fun event(): EventRow = jdbc
+	private fun event(): EventRow = events().single()
+
+	private fun events(): List<EventRow> = jdbc
 		.sql(
 			"""
 			SELECT aggregate_type, aggregate_id, event_type, payload, occurred_at, recorded_at
@@ -203,7 +282,7 @@ class CommandFacadeIntegrationTest(
 				recordedAt = rs.getObject("recorded_at", LocalDateTime::class.java),
 			)
 		}
-		.single()
+		.list()
 
 	private fun operation(): OperationRow = jdbc
 		.sql("SELECT id, workspace_id, amount, occurred_at, recorded_at FROM t_operations ORDER BY occurred_at")
@@ -219,7 +298,7 @@ class CommandFacadeIntegrationTest(
 		.single()
 
 	private fun payload(): EventPayload =
-		assertNotNull(mapper.readValue(event().payload, EventPayload::class.java))
+		assertNotNull(mapper.readValue(events().first().payload, EventPayload::class.java))
 
 	private data class EventRow(
 		val entityType: String,

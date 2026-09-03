@@ -8,18 +8,12 @@ import com.github.melancholic.fintrace.core.domain.command.ReviseOperationComman
 import com.github.melancholic.fintrace.core.domain.event.EntityType
 import com.github.melancholic.fintrace.core.domain.event.EventType
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
-import com.github.melancholic.fintrace.core.validation.OperationValidationService
 
-abstract class AbstractOperationCommandHandler<C : OperationCommand<R>, R>(
-    private val validationService: OperationValidationService,
+abstract class AbstractOperationCommandHandler<C : OperationCommand<R>, R, P : EventPayload>(
     private val eventsDAO: EventsDAO,
-) : OperationCommandHandler<C, R> {
+) : OperationCommandHandler<C, R, P> {
 
-    abstract fun buildEventPayload(command: C): EventPayload
-
-    protected fun validate(command: CreateOperationCommand) {
-        validationService.validate(command)
-    }
+    abstract fun buildEventPayload(command: C): P
 
     protected fun registerEvent(command: C) = eventsDAO.registerEvent(
         workspaceId = command.workspaceId,

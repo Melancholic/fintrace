@@ -2,10 +2,9 @@ package com.github.melancholic.fintrace.core.domain.event.payload
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.domain.projection.Projection
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 
 /**
  * The body of an event, stored as `jsonb`.
@@ -19,13 +18,15 @@ import java.util.UUID
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(
-	JsonSubTypes.Type(value = CreatedOperationEventPayloadV1::class, name = CreatedOperationEventPayloadV1.TYPE),
+	JsonSubTypes.Type(value = OperationCreatedV1::class, name = OperationCreatedV1.TYPE),
+	JsonSubTypes.Type(value = OperationRevisedV1::class, name = OperationRevisedV1.TYPE),
+	JsonSubTypes.Type(value = OperationCanceledV1::class, name = OperationCanceledV1.TYPE)
 )
 sealed interface EventPayload {
 	val version: Int
 	val id: UUID
-	val occurredAt: LocalDateTime
+	val workspaceId: UUID
 	val recordedAt: LocalDateTime
-    fun asProjection(): Projection
+	val occurredAt: LocalDateTime
+	fun asProjection(): Projection
 }
-
