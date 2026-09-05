@@ -1,6 +1,6 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
-import com.github.melancholic.fintrace.core.api.v1.dto.CreateOperationResponse
+import com.github.melancholic.fintrace.core.api.v1.dto.CreateUUIDEntityResponse
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationResponse
 import com.github.melancholic.fintrace.core.api.v1.mapper.OperationMapper
@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder
@@ -45,8 +46,8 @@ class OperationsRestController(
     @PostMapping
     fun createNewOperation(
         @PathVariable("workspaceId") workspaceId: UUID,
-        @RequestBody request: OperationRequest
-    ): ResponseEntity<CreateOperationResponse> {
+        @Valid @RequestBody request: OperationRequest
+    ): ResponseEntity<CreateUUIDEntityResponse> {
         val createdId = commandFacade.processCommand(
             CreateOperationCommand(
                 workspaceId,
@@ -63,7 +64,7 @@ class OperationsRestController(
 
         return ResponseEntity
             .created(location)
-            .body(CreateOperationResponse(createdId))
+            .body(CreateUUIDEntityResponse(createdId))
     }
 
     @Operation(summary = "Fetch a single operation")
@@ -106,7 +107,7 @@ class OperationsRestController(
     fun reviseOperation(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("operationId") operationId: UUID,
-        @RequestBody request: OperationRequest
+        @Valid @RequestBody request: OperationRequest
     ): ResponseEntity<Void> {
         commandFacade.processCommand(
             ReviseOperationCommand(

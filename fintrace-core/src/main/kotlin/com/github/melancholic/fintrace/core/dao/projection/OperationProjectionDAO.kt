@@ -23,13 +23,17 @@ class OperationProjectionDAOImpl(
     override fun createOrUpdate(projection: OperationProjection): UUID {
         return jdbc.sql(INSERT_OR_UPDATE).param("id", projection.id).param("workspaceId", projection.workspaceId)
             .param("amount", projection.amount).param("occurredAt", projection.occurredAt)
-            .param("recordedAt", projection.recordedAt).query(UUID::class.java).single()
+            .param("recordedAt", projection.recordedAt)
+            .query(UUID::class.java
+            ).single()
     }
 
     override fun getById(
         workspaceId: UUID, operationId: UUID
     ): OperationProjection {
-        return jdbc.sql(SELECT).param("id", operationId).param("workspaceId", workspaceId)
+        return jdbc.sql(SELECT)
+            .param("id", operationId)
+            .param("workspaceId", workspaceId)
             .query(OperationProjection::class.java).optional()
             .orElseThrow { NotFoundEntityException("Operation not found into workspace (workspaceId='$workspaceId', operationId='$operationId')") }
     }

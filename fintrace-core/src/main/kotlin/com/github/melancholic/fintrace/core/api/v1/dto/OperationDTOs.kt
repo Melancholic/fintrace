@@ -9,10 +9,6 @@ data class OperationRequest(
     val occurredAt: LocalDateTime,
 )
 
-data class CreateOperationResponse(
-    val id: UUID,
-)
-
 data class OperationResponse(
     val id: UUID,
     val amount: BigDecimal,

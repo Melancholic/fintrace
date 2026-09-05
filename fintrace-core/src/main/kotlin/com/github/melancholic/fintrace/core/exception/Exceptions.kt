@@ -11,6 +11,11 @@ class NotFoundEntityException(message: String = "Entity not found") : RuntimeExc
 @ResponseStatus(value = HttpStatus.BAD_REQUEST)
 class ValidationError(message: String = "Validation error")  : RuntimeException(message)
 
+@ResponseStatus(value = HttpStatus.CONFLICT)
+class ActionConflictException(message: String = "Conflict")  : RuntimeException(message)
+
+@ResponseStatus(value = HttpStatus.CONFLICT)
+class OperationNotAllowedException(message: String = "Operation not allowed")  : RuntimeException(message)
 
 // SECURITY EXCEPTIONS
 @ResponseStatus(value = HttpStatus.UNAUTHORIZED)
@@ -19,3 +24,7 @@ class NotAuthenticatedException : RuntimeException("Not authenticated")
 @ResponseStatus(value = HttpStatus.FORBIDDEN)
 class WorkspaceNotPermitted(userId: String, workspaceId: UUID) :
     RuntimeException("User $userId not permitted to workspace '$workspaceId'")
+
+// SYSTEM ERRORS
+@ResponseStatus(value = HttpStatus.INTERNAL_SERVER_ERROR)
+class ApplicationException(message: String = "Server error")  : RuntimeException(message)
