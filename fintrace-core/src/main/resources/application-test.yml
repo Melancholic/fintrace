@@ -1,0 +1,6 @@
+spring:
+  security:
+    user:
+      name: "stub:testuser"   # = t_users.external_id seeded by V0004; both deleted at M5
+      password: testuser
+      roles: USER,ADMIN       # ADMIN so /admin/**'s replay is reachable locally
