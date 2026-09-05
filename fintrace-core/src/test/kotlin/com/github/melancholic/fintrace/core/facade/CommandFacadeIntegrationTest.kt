@@ -1,6 +1,9 @@
 package com.github.melancholic.fintrace.core.facade
 
+import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.dao.UsersDAO
+import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
@@ -16,6 +19,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.security.test.context.support.WithMockUser
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -31,11 +35,16 @@ import kotlin.test.assertTrue
  */
 @Import(TestcontainersConfiguration::class, CommandFacadeIntegrationTest.FixedClock::class)
 @SpringBootTest
+@WithMockUser(username = TestWorkspaces.TEST_SUBJECT)
 class CommandFacadeIntegrationTest(
 	@Autowired private val facade: CommandFacade,
 	@Autowired private val jdbc: JdbcClient,
 	@Autowired private val mapper: ObjectMapper,
+	@Autowired private val workspaceDAO: WorkspaceDAO,
+	@Autowired private val usersDAO: UsersDAO,
 ) {
+
+	private lateinit var workspaceId: UUID
 
 	@TestConfiguration
 	class FixedClock {
@@ -48,8 +57,8 @@ class CommandFacadeIntegrationTest(
 
 	@BeforeEach
 	fun clean() {
-		jdbc.sql("DELETE FROM t_operations").update()
-		jdbc.sql("DELETE FROM t_events").update()
+		TestWorkspaces.reset(jdbc)
+		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
 	}
 
 	@Test
@@ -152,12 +161,12 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `isolates workspaces`() {
-		val other = UUID.randomUUID()
+		val other = TestWorkspaces.create(workspaceDAO, usersDAO, name = "other-workspace")
 
 		facade.processCommand(command())
 		facade.processCommand(command(workspaceId = other))
 
-		assertEquals(1, countIn(WORKSPACE_ID))
+		assertEquals(1, countIn(workspaceId))
 		assertEquals(1, countIn(other))
 	}
 
@@ -233,14 +242,14 @@ class CommandFacadeIntegrationTest(
 	}
 
 	private fun command(
-		workspaceId: UUID = WORKSPACE_ID,
+		workspaceId: UUID = this.workspaceId,
 		occurredAt: LocalDateTime = OCCURRED_AT,
 		amount: BigDecimal = BigDecimal("100.0000"),
 	) = CreateOperationCommand(workspaceId, occurredAt, amount)
 
 	private fun revise(
 		operationId: UUID,
-		workspaceId: UUID = WORKSPACE_ID,
+		workspaceId: UUID = this.workspaceId,
 		occurredAt: LocalDateTime = OCCURRED_AT,
 		amount: BigDecimal = BigDecimal("200.0000"),
 	) = ReviseOperationCommand(
@@ -249,7 +258,7 @@ class CommandFacadeIntegrationTest(
 
 	private fun cancel(
 		operationId: UUID,
-		workspaceId: UUID = WORKSPACE_ID,
+		workspaceId: UUID = this.workspaceId,
 		occurredAt: LocalDateTime = OCCURRED_AT,
 	) = CancelOperationCommand(
 		workspaceId = workspaceId, operationId = operationId, occurredAt = occurredAt,
@@ -318,7 +327,6 @@ class CommandFacadeIntegrationTest(
 	)
 
 	private companion object {
-		val WORKSPACE_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
 		val RECORDED_AT: LocalDateTime = LocalDateTime.parse("2026-03-16T09:00:00")
 	}

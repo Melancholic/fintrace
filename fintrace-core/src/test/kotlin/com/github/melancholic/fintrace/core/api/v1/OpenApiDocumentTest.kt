@@ -54,6 +54,31 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
+	fun `documents every workspace endpoint`() {
+		mvc.perform(get("/v3/api-docs"))
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces'].post.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].put.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].delete.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/archive'].post.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/archive'].delete.summary").exists())
+	}
+
+	@Test
+	fun `documents the conflict and version responses`() {
+		// A generated client has to know 409 is reachable, or optimistic locking looks like a
+		// server error to it.
+		mvc.perform(get("/v3/api-docs"))
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].put.responses.409").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].delete.responses.409").exists())
+			.andExpect(
+				jsonPath("$.paths['/api/v1/workspaces/{workspaceId}'].delete.parameters[?(@.name=='version')]")
+					.exists()
+			)
+	}
+
+	@Test
 	fun `serves the Swagger UI anonymously`() {
 		mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk)
 	}

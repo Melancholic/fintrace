@@ -1,6 +1,9 @@
 package com.github.melancholic.fintrace.core.facade
 
+import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.dao.UsersDAO
+import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
@@ -13,6 +16,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.security.test.context.support.WithMockUser
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
@@ -27,10 +31,15 @@ import kotlin.test.assertFailsWith
  */
 @Import(TestcontainersConfiguration::class, CommandFacadeTransactionTest.FailingProjection::class)
 @SpringBootTest
+@WithMockUser(username = TestWorkspaces.TEST_SUBJECT)
 class CommandFacadeTransactionTest(
 	@Autowired private val facade: CommandFacade,
 	@Autowired private val jdbc: JdbcClient,
+	@Autowired private val workspaceDAO: WorkspaceDAO,
+	@Autowired private val usersDAO: UsersDAO,
 ) {
+
+	private lateinit var workspaceId: UUID
 
 	class ProjectionFailed : RuntimeException("projection write failed")
 
@@ -56,8 +65,8 @@ class CommandFacadeTransactionTest(
 
 	@BeforeEach
 	fun clean() {
-		jdbc.sql("DELETE FROM t_operations").update()
-		jdbc.sql("DELETE FROM t_events").update()
+		TestWorkspaces.reset(jdbc)
+		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
 	}
 
 	@Test
@@ -65,7 +74,7 @@ class CommandFacadeTransactionTest(
 		assertFailsWith<ProjectionFailed> {
 			facade.processCommand(
 				CreateOperationCommand(
-					UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001"),
+					workspaceId,
 					LocalDateTime.parse("2026-03-15T14:30:00"),
 					BigDecimal("100.0000"),
 				)

@@ -1,6 +1,9 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
+import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.dao.UsersDAO
+import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -38,12 +41,19 @@ import kotlin.test.assertEquals
 class OperationsRestControllerTest(
 	@Autowired private val mvc: MockMvc,
 	@Autowired private val jdbc: JdbcClient,
+	@Autowired private val workspaceDAO: WorkspaceDAO,
+	@Autowired private val usersDAO: UsersDAO,
 ) {
+
+	private lateinit var workspaceId: UUID
+
+	/** Built per test: the workspace is created through the DAO, so its id is minted, not fixed. */
+	private val operationsPath get() = "/api/v1/workspaces/$workspaceId/operations"
 
 	@BeforeEach
 	fun clean() {
-		jdbc.sql("DELETE FROM t_operations").update()
-		jdbc.sql("DELETE FROM t_events").update()
+		TestWorkspaces.reset(jdbc)
+		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
 	}
 
 	@Test
@@ -60,7 +70,7 @@ class OperationsRestControllerTest(
 		val id = idOf(response.contentAsString)
 
 		response.getHeader("Location").let { location ->
-			assertEquals("$OPERATIONS_PATH/$id", URI.create(location!!).path)
+			assertEquals("${operationsPath}/$id", URI.create(location!!).path)
 		}
 
 		// The header is only useful if it actually resolves — follow it.
@@ -87,14 +97,14 @@ class OperationsRestControllerTest(
 		assertEquals(BigDecimal("-1234.5600"), stored.first)
 		assertEquals(OCCURRED_AT, stored.second)
 		// The workspace comes from the path, never from the body (§10.1).
-		assertEquals(WORKSPACE_ID, stored.third)
+		assertEquals(workspaceId, stored.third)
 	}
 
 	@Test
 	fun `returns the operation with the fields the mapper exposes`() {
 		val id = idOf(mvc.perform(createRequest()).andReturn().response.contentAsString)
 
-		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(status().isOk)
 			.andExpect(jsonPath("$.id").value(id))
 			.andExpect(jsonPath("$.amount").value(-1234.5600))
@@ -112,7 +122,7 @@ class OperationsRestControllerTest(
 		)
 
 		// §6.1: retrospective entry is the norm, and the API must not treat it as an error.
-		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(jsonPath("$.occurredAt").value(backDated))
 	}
 
@@ -122,14 +132,14 @@ class OperationsRestControllerTest(
 			mvc.perform(createRequest(amount = "250.0000")).andReturn().response.contentAsString
 		)
 
-		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(jsonPath("$.amount").value(250.0000))
 	}
 
 	@Test
 	fun `rejects a malformed body`() {
 		mvc.perform(
-			post(OPERATIONS_PATH).with(user(USER)).with(csrf())
+			post(operationsPath).with(user(USER)).with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""{"amount":"not-a-number","occurredAt":"2026-03-15T14:30:00"}""")
 		).andExpect(status().isBadRequest)
@@ -143,7 +153,7 @@ class OperationsRestControllerTest(
 			.andExpect(status().isNoContent)
 			.andExpect(content().string(""))
 
-		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(jsonPath("$.id").value(id.toString()))
 			.andExpect(jsonPath("$.amount").value(42.0000))
 			.andExpect(jsonPath("$.occurredAt").value("2021-05-05T10:00:00"))
@@ -200,7 +210,7 @@ class OperationsRestControllerTest(
 		val id = createdId()
 
 		mvc.perform(
-			put("$OPERATIONS_PATH/$id").with(user(USER)).with(csrf())
+			put("${operationsPath}/$id").with(user(USER)).with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""{"amount":"not-a-number","occurredAt":"2026-03-15T14:30:00"}""")
 		).andExpect(status().isBadRequest)
@@ -211,7 +221,7 @@ class OperationsRestControllerTest(
 		val id = createdId()
 
 		mvc.perform(
-			put("$OPERATIONS_PATH/$id").contentType(MediaType.APPLICATION_JSON).content(body())
+			put("${operationsPath}/$id").contentType(MediaType.APPLICATION_JSON).content(body())
 		).andExpect(status().isForbidden)
 
 		assertEquals(1, eventCount(), "nothing may be written for an unauthenticated caller")
@@ -226,7 +236,7 @@ class OperationsRestControllerTest(
 			.andExpect(content().string(""))
 
 		// §10.2: a cancelled operation disappears entirely rather than being flagged.
-		mvc.perform(get("$OPERATIONS_PATH/$id").with(user(USER)))
+		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(status().isNotFound)
 		assertEquals(0, count())
 		assertEquals(2, eventCount(), "the cancellation is recorded even though the row is gone")
@@ -254,7 +264,7 @@ class OperationsRestControllerTest(
 	fun `rejects an unauthenticated cancel`() {
 		val id = createdId()
 
-		mvc.perform(delete("$OPERATIONS_PATH/$id"))
+		mvc.perform(delete("${operationsPath}/$id"))
 			.andExpect(status().isForbidden)
 
 		assertEquals(1, count(), "nothing may be removed for an unauthenticated caller")
@@ -263,7 +273,7 @@ class OperationsRestControllerTest(
 	@Test
 	fun `rejects an unauthenticated create`() {
 		mvc.perform(
-			post(OPERATIONS_PATH).contentType(MediaType.APPLICATION_JSON).content(body())
+			post(operationsPath).contentType(MediaType.APPLICATION_JSON).content(body())
 		).andExpect(status().isForbidden)
 
 		assertEquals(0, count(), "nothing may be written for an unauthenticated caller")
@@ -271,14 +281,14 @@ class OperationsRestControllerTest(
 
 	@Test
 	fun `rejects an unauthenticated read`() {
-		mvc.perform(get("$OPERATIONS_PATH/${UUID.randomUUID()}"))
+		mvc.perform(get("${operationsPath}/${UUID.randomUUID()}"))
 			.andExpect(status().isForbidden)
 	}
 
 	private fun createRequest(
 		amount: String = "-1234.5600",
 		occurredAt: String = "2026-03-15T14:30:00",
-	) = post(OPERATIONS_PATH)
+	) = post(operationsPath)
 		.with(user(USER))
 		.with(csrf())
 		.contentType(MediaType.APPLICATION_JSON)
@@ -288,13 +298,13 @@ class OperationsRestControllerTest(
 		operationId: UUID,
 		amount: String = "-1234.5600",
 		occurredAt: String = "2026-03-15T14:30:00",
-	) = put("$OPERATIONS_PATH/$operationId")
+	) = put("${operationsPath}/$operationId")
 		.with(user(USER))
 		.with(csrf())
 		.contentType(MediaType.APPLICATION_JSON)
 		.content(body(amount, occurredAt))
 
-	private fun cancelRequest(operationId: UUID) = delete("$OPERATIONS_PATH/$operationId")
+	private fun cancelRequest(operationId: UUID) = delete("${operationsPath}/$operationId")
 		.with(user(USER))
 		.with(csrf())
 
@@ -311,13 +321,11 @@ class OperationsRestControllerTest(
 	private fun idOf(json: String) = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(json)!!.groupValues[1]
 
 	private fun count() = jdbc.sql("SELECT count(*) FROM t_operations WHERE workspace_id = :id")
-		.param("id", WORKSPACE_ID)
+		.param("id", workspaceId)
 		.query(Int::class.java).single()
 
 	private companion object {
-		const val USER = "tester"
-		val WORKSPACE_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
+		val USER = TestWorkspaces.TEST_SUBJECT
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
-		const val OPERATIONS_PATH = "/api/v1/workspaces/0199a1c2-3d4e-7f80-8123-000000000001/operations"
 	}
 }

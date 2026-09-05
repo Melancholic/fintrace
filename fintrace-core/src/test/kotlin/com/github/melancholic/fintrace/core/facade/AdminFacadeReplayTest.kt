@@ -1,6 +1,9 @@
 package com.github.melancholic.fintrace.core.facade
 
+import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.dao.UsersDAO
+import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
@@ -10,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.security.test.context.support.WithMockUser
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
@@ -24,42 +28,47 @@ import kotlin.test.assertTrue
  */
 @Import(TestcontainersConfiguration::class)
 @SpringBootTest
+@WithMockUser(username = TestWorkspaces.TEST_SUBJECT)
 class AdminFacadeReplayTest(
 	@Autowired private val commandFacade: CommandFacade,
 	@Autowired private val adminFacade: AdminFacade,
 	@Autowired private val jdbc: JdbcClient,
+	@Autowired private val workspaceDAO: WorkspaceDAO,
+	@Autowired private val usersDAO: UsersDAO,
 ) {
+
+	private lateinit var workspace: UUID
 
 	@BeforeEach
 	fun clean() {
-		jdbc.sql("DELETE FROM t_operations").update()
-		jdbc.sql("DELETE FROM t_events").update()
+		TestWorkspaces.reset(jdbc)
+		workspace = TestWorkspaces.create(workspaceDAO, usersDAO)
 	}
 
 	@Test
 	fun `rebuilds a projection identical to the original`() {
 		repeat(5) { create(amount = "10.${it}000") }
-		val before = operations(WORKSPACE)
+		val before = operations(workspace)
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
-		assertEquals(before, operations(WORKSPACE))
+		assertEquals(before, operations(workspace))
 		assertEquals(5, before.size, "sanity: the snapshot must not be empty")
 	}
 
 	@Test
 	fun `reconstructs a projection that was wiped entirely`() {
 		repeat(3) { create() }
-		val before = operations(WORKSPACE)
+		val before = operations(workspace)
 
 		// Not just "replay agrees with itself" — the rows are gone, and only the event log
 		// remains to rebuild them from.
 		jdbc.sql("DELETE FROM t_operations").update()
-		assertTrue(operations(WORKSPACE).isEmpty(), "sanity: the projection is empty")
+		assertTrue(operations(workspace).isEmpty(), "sanity: the projection is empty")
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
-		assertEquals(before, operations(WORKSPACE))
+		assertEquals(before, operations(workspace))
 	}
 
 	@Test
@@ -67,7 +76,7 @@ class AdminFacadeReplayTest(
 		repeat(3) { create() }
 		val eventsBefore = eventIds()
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
 		// Replay applies stored events; it must never travel the command path, which would
 		// write new ones and corrupt the log it is rebuilding from.
@@ -78,23 +87,23 @@ class AdminFacadeReplayTest(
 	fun `is idempotent`() {
 		repeat(3) { create() }
 
-		adminFacade.replayWorkspace(WORKSPACE)
-		val once = operations(WORKSPACE)
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
+		val once = operations(workspace)
+		adminFacade.replayWorkspace(workspace)
 
-		assertEquals(once, operations(WORKSPACE))
+		assertEquals(once, operations(workspace))
 	}
 
 	@Test
 	fun `leaves other workspaces untouched`() {
-		val other = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000002")
+		val other = TestWorkspaces.create(workspaceDAO, usersDAO, name = "other-workspace")
 		repeat(2) { create() }
 		repeat(3) { create(workspaceId = other) }
 		val otherBefore = operations(other)
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
-		assertEquals(2, operations(WORKSPACE).size)
+		assertEquals(2, operations(workspace).size)
 		assertEquals(otherBefore, operations(other), "replay is scoped to one workspace")
 	}
 
@@ -102,7 +111,7 @@ class AdminFacadeReplayTest(
 	fun `replaying a workspace with no events is a no-op`() {
 		adminFacade.replayWorkspace(UUID.randomUUID())
 
-		assertEquals(0, operations(WORKSPACE).size)
+		assertEquals(0, operations(workspace).size)
 	}
 
 	@Test
@@ -110,35 +119,35 @@ class AdminFacadeReplayTest(
 		val id = create()
 		commandFacade.processCommand(
 			ReviseOperationCommand(
-				workspaceId = WORKSPACE, operationId = id,
+				workspaceId = workspace, operationId = id,
 				occurredAt = OCCURRED_AT, amount = BigDecimal("777.0000"),
 			)
 		)
-		val before = operations(WORKSPACE)
+		val before = operations(workspace)
 
 		jdbc.sql("DELETE FROM t_operations").update()
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
 		// Two events, one row: the create inserts and the revision overwrites, which only holds
 		// if applying an event is an upsert rather than an insert.
-		assertEquals(before, operations(WORKSPACE))
-		assertEquals(1, operations(WORKSPACE).size)
-		assertEquals(BigDecimal("777.0000"), operations(WORKSPACE).single().amount)
+		assertEquals(before, operations(workspace))
+		assertEquals(1, operations(workspace).size)
+		assertEquals(BigDecimal("777.0000"), operations(workspace).single().amount)
 	}
 
 	@Test
 	fun `replays a cancellation as an absent row`() {
 		val id = create()
 		commandFacade.processCommand(
-			CancelOperationCommand(workspaceId = WORKSPACE, operationId = id, occurredAt = OCCURRED_AT)
+			CancelOperationCommand(workspaceId = workspace, operationId = id, occurredAt = OCCURRED_AT)
 		)
 
 		jdbc.sql("DELETE FROM t_operations").update()
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
 		// The log still holds both events; the rebuilt projection must not hold the row.
 		assertEquals(2, eventIds().size)
-		assertTrue(operations(WORKSPACE).isEmpty(), "a cancelled operation must not come back")
+		assertTrue(operations(workspace).isEmpty(), "a cancelled operation must not come back")
 	}
 
 	@Test
@@ -148,20 +157,20 @@ class AdminFacadeReplayTest(
 		create(amount = "30.0000")
 		commandFacade.processCommand(
 			ReviseOperationCommand(
-				workspaceId = WORKSPACE, operationId = revised,
+				workspaceId = workspace, operationId = revised,
 				occurredAt = BACK_DATED, amount = BigDecimal("11.0000"),
 			)
 		)
 		commandFacade.processCommand(
 			CancelOperationCommand(
-				workspaceId = WORKSPACE, operationId = cancelled, occurredAt = OCCURRED_AT,
+				workspaceId = workspace, operationId = cancelled, occurredAt = OCCURRED_AT,
 			)
 		)
-		val before = operations(WORKSPACE)
+		val before = operations(workspace)
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
-		assertEquals(before, operations(WORKSPACE))
+		assertEquals(before, operations(workspace))
 		assertEquals(2, before.size, "sanity: one of the three was cancelled")
 	}
 
@@ -169,16 +178,16 @@ class AdminFacadeReplayTest(
 	fun `preserves amount and timestamps exactly`() {
 		create(amount = "-1234.5600", occurredAt = BACK_DATED)
 
-		adminFacade.replayWorkspace(WORKSPACE)
+		adminFacade.replayWorkspace(workspace)
 
-		val row = operations(WORKSPACE).single()
+		val row = operations(workspace).single()
 		assertEquals(BigDecimal("-1234.5600"), row.amount)
 		assertEquals(4, row.amount.scale())
 		assertEquals(BACK_DATED, row.occurredAt)
 	}
 
 	private fun create(
-		workspaceId: UUID = WORKSPACE,
+		workspaceId: UUID = workspace,
 		amount: String = "100.0000",
 		occurredAt: LocalDateTime = OCCURRED_AT,
 	) = commandFacade.processCommand(
@@ -216,7 +225,6 @@ class AdminFacadeReplayTest(
 	)
 
 	private companion object {
-		val WORKSPACE: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
 		val BACK_DATED: LocalDateTime = LocalDateTime.parse("2020-01-01T08:00:00")
 	}

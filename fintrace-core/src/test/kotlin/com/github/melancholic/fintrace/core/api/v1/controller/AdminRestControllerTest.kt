@@ -1,6 +1,9 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
+import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
+import com.github.melancholic.fintrace.core.dao.UsersDAO
+import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.facade.CommandFacade
 import org.junit.jupiter.api.BeforeEach
@@ -10,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
@@ -24,16 +28,25 @@ import kotlin.test.assertEquals
 @Import(TestcontainersConfiguration::class)
 @SpringBootTest
 @AutoConfigureMockMvc
+// The arrange step calls CommandFacade directly, which resolves the caller; the MockMvc requests
+// below override this with their own user per request.
+@WithMockUser(username = TestWorkspaces.TEST_SUBJECT)
 class AdminRestControllerTest(
 	@Autowired private val mvc: MockMvc,
 	@Autowired private val commandFacade: CommandFacade,
 	@Autowired private val jdbc: JdbcClient,
+	@Autowired private val workspaceDAO: WorkspaceDAO,
+	@Autowired private val usersDAO: UsersDAO,
 ) {
+
+	private lateinit var workspace: UUID
+
+	private val replayPath get() = "/admin/api/v1/workspaces/$workspace/replay"
 
 	@BeforeEach
 	fun clean() {
-		jdbc.sql("DELETE FROM t_operations").update()
-		jdbc.sql("DELETE FROM t_events").update()
+		TestWorkspaces.reset(jdbc)
+		workspace = TestWorkspaces.create(workspaceDAO, usersDAO)
 	}
 
 	@Test
@@ -41,7 +54,7 @@ class AdminRestControllerTest(
 		repeat(3) { create() }
 		jdbc.sql("DELETE FROM t_operations").update()
 
-		mvc.perform(post(REPLAY_PATH).with(user("admin").roles(ADMIN_ROLE)).with(csrf()))
+		mvc.perform(post(replayPath).with(user("admin").roles(ADMIN_ROLE)).with(csrf()))
 			.andExpect(status().isOk)
 
 		assertEquals(3, count(), "the projection is rebuilt from the event log")
@@ -62,7 +75,7 @@ class AdminRestControllerTest(
 
 		// Authenticated is not enough: replay wipes and rebuilds a whole workspace, so it is
 		// gated on the role rather than merely on being signed in.
-		mvc.perform(post(REPLAY_PATH).with(user("regular").roles("USER")).with(csrf()))
+		mvc.perform(post(replayPath).with(user("regular").roles("USER")).with(csrf()))
 			.andExpect(status().isForbidden)
 
 		assertEquals(2, count(), "a non-admin cannot clear the projection")
@@ -72,7 +85,7 @@ class AdminRestControllerTest(
 	fun `rejects an unauthenticated replay`() {
 		repeat(2) { create() }
 
-		mvc.perform(post(REPLAY_PATH)).andExpect(status().isForbidden)
+		mvc.perform(post(replayPath)).andExpect(status().isForbidden)
 
 		// The projection must be untouched — an unauthenticated caller cannot even clear it.
 		assertEquals(2, count())
@@ -80,20 +93,17 @@ class AdminRestControllerTest(
 
 	private fun create() = commandFacade.processCommand(
 		CreateOperationCommand(
-			WORKSPACE,
+			workspace,
 			LocalDateTime.parse("2026-03-15T14:30:00"),
 			BigDecimal("100.0000"),
 		)
 	)
 
 	private fun count() = jdbc.sql("SELECT count(*) FROM t_operations WHERE workspace_id = :ws")
-		.param("ws", WORKSPACE)
+		.param("ws", workspace)
 		.query(Int::class.java).single()
 
 	private companion object {
 		const val ADMIN_ROLE = "ADMIN"
-		val WORKSPACE: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
-		const val REPLAY_PATH =
-			"/admin/api/v1/workspaces/0199a1c2-3d4e-7f80-8123-000000000001/replay"
 	}
 }
