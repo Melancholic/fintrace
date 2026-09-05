@@ -15,17 +15,12 @@ import java.util.UUID
 
 @RestController
 @RequestMapping(ADMIN_API_V1_BASE_PATH)
-@Tag(name = "Admin", description = "Maintenance operations; requires the ADMIN role")
+@Tag(name = "Admin")
 class AdminRestController(
     private val adminFacade: AdminFacade
 ) {
 
-    @Operation(
-        summary = "Rebuild a workspace's projections from its event log",
-        description = "Clears the workspace's projection tables and replays every stored event " +
-            "in order. Recovery tool: use after fixing a projection defect, or to verify that " +
-            "the projection is still derivable from the log. Writes no new events.",
-    )
+    @Operation(summary = "Rebuild a workspace's projections from its event log")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Rebuilt; a workspace with no events is a no-op"),
         ApiResponse(responseCode = "403", description = "Not authenticated, or not an admin"),

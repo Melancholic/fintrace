@@ -24,7 +24,7 @@ import java.util.*
 
 @RestController
 @RequestMapping(OPERATIONS_AREA_API_PATH)
-@Tag(name = "Operations", description = "Income and expense entries within a workspace")
+@Tag(name = "Operations")
 class OperationsRestController(
     private val commandFacade: CommandFacade,
     private val projectionFacade: ProjectionFacade,
@@ -32,15 +32,10 @@ class OperationsRestController(
     private val timestampProvider: TimestampProvider,
 ) {
 
-    @Operation(
-        summary = "Record a new operation",
-        description = "The amount is signed: expenses are negative. `occurredAt` is when the " +
-                "operation happened and may be back-dated freely; the time it was recorded is set " +
-                "by the server.",
-    )
+    @Operation(summary = "Record an operation")
     @ApiResponses(
-        ApiResponse(responseCode = "201", description = "Created; `Location` points at the new operation"),
-        ApiResponse(responseCode = "400", description = "Malformed request body"),
+        ApiResponse(responseCode = "201", description = "Created; `Location` points at it"),
+        ApiResponse(responseCode = "400", description = "Malformed body, or `occurredAt` in the future"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @PostMapping
@@ -67,13 +62,10 @@ class OperationsRestController(
             .body(CreateUUIDEntityResponse(createdId))
     }
 
-    @Operation(summary = "Fetch a single operation")
+    @Operation(summary = "Fetch an operation")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Found"),
-        ApiResponse(
-            responseCode = "404",
-            description = "No such operation in this workspace — including one that exists in another",
-        ),
+        ApiResponse(responseCode = "404", description = "No such operation in this workspace"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @GetMapping("/{operationId}")
@@ -87,20 +79,11 @@ class OperationsRestController(
             .ok(mapper.toResponse(projection))
     }
 
-    @Operation(
-        summary = "Replace an operation",
-        description = "The body carries the operation's complete new state, not the fields that " +
-                "changed: an absent field is not \"unchanged\". `occurredAt` may be corrected " +
-                "freely, including into the past. The revision is recorded internally as a new " +
-                "event; the client never sees revisions.",
-    )
+    @Operation(summary = "Replace an operation")
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Revised"),
         ApiResponse(responseCode = "400", description = "Malformed body, or `occurredAt` in the future"),
-        ApiResponse(
-            responseCode = "404",
-            description = "No such operation in this workspace — including one that exists in another",
-        ),
+        ApiResponse(responseCode = "404", description = "No such operation in this workspace"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @PutMapping("/{operationId}")
@@ -121,18 +104,10 @@ class OperationsRestController(
         return ResponseEntity.noContent().build()
     }
 
-    @Operation(
-        summary = "Cancel an operation",
-        description = "Cancelling removes the operation from listings and statistics entirely — " +
-                "it is not shown struck through. The history remains in the event log but is not " +
-                "exposed by the API.",
-    )
+    @Operation(summary = "Cancel an operation")
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Cancelled"),
-        ApiResponse(
-            responseCode = "404",
-            description = "No such operation in this workspace, including one already cancelled",
-        ),
+        ApiResponse(responseCode = "404", description = "No such operation, including one already cancelled"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @DeleteMapping("/{operationId}")
