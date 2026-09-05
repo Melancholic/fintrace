@@ -94,8 +94,8 @@ handlers were not idempotent and a stray direct write happened somewhere.
 
 The rest of the entities on the M0 foundation.
 
-- Workspaces with the `NEW` / `ACTIVE` / `ARCHIVED` / `DELETED` lifecycle (§4.1.1), including
-  the emptiness check and the system-wide read-only guard
+- Workspaces with the `NEW` / `ACTIVE` / `ARCHIVED` / `DELETED` lifecycle (§4.1.1) — activation
+  implicit in the first write — including the emptiness check and the system-wide read-only guard
 - Accounts, archiving
 - Categories: adjacency-list tree, system roots and both `Others`, soft delete, cycle and
   branch-move validation

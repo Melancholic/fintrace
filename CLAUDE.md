@@ -13,11 +13,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 and `POST /admin/api/v1/workspaces/{id}/replay` clears the projection and rebuilds it from the
 event log. Only Core exists — the importer, BFF and web are later milestones.
 
-**Done in M1 so far:** task 1.17 (revise / cancel, with the cancelled row removed rather than
-flagged) plus its HTTP surface, and command-time validation — the operation must exist in the
-command's workspace, and `occurredAt` may not be in the future. **Not yet started:** everything
-workspace-, account-, category-, transfer- and anchor-shaped (1.1–1.16, 1.18–1.26), so
-`t_workspaces` still does not exist and `workspace_id` remains an unconstrained `uuid`.
+**Done in M1 so far** (6 of 27 task items; the two shapes every later aggregate copies are both
+finished):
+
+- **1.1** `t_workspaces` + `t_users`, `owner_id`, `version`, `updated_at`, and `workspace_id` as a
+  real foreign key with `ON DELETE CASCADE`.
+- **1.2** create → `NEW` — *except* seeding the four system categories, which waits for categories.
+- **1.4** every transition, including implicit `NEW → ACTIVE`; `requireWritable` guards
+  `CommandFacade`, `requireReadable` guards `ProjectionFacade`.
+- **1.5** soft delete, guarded by the caller's `version`.
+- **1.17** operation revise / cancel (the cancelled row is removed, not flagged) with endpoints
+  and command-time validation — the operation must exist in the command's workspace, and
+  `occurredAt` may not be in the future.
+- Workspace CRUD over seven endpoints, all documented in the OpenAPI spec.
+
+Layering, in the shape later aggregates should follow: controller (`@Valid`, request shape) →
+facade (transaction boundary, resolves identity once) → service (domain rules, takes `userId`
+explicitly, `@Transactional(MANDATORY)` so it cannot be called from outside a transaction) → DAO
+(SQL, returns row counts rather than asserting). Validation services live beside the services and
+hold rules that must also hold for the CLI and the importer.
+
+**`t_users` is pulled forward from M5** (§7.4): an authoritative table, not event-sourced, holding
+a local UUID plus the IdP's `sub` in `external_id`. One stub row is seeded by `V0004`
+(`username = 'testuser'`) and `IdentityProvider` resolves it by username — both the seed and that
+lookup are what M5 deletes. `owner_id` is always stamped server-side; no DTO carries it.
+
+**Not yet started:** the emptiness check (1.3), the retention job (1.5b), 1.6's DAO guard test,
+and everything account-, category-, transfer- and anchor-shaped (1.7–1.16, 1.18–1.26).
+
+**Do the two deferred shapes before accounts (1.7)** — accounts are the second event-sourced
+aggregate, which is where both stop being free.
 
 Two agreed shapes from `docs/plans/M1.md` are **not** implemented yet, both deliberately deferred
 rather than rejected: the `occurredAt` split (every command still declares one, so cancel carries
@@ -25,7 +50,7 @@ a business date it has no use for), and `ProjectionChange` / `ProjectionApplier`
 currently modelled as a `DeleteOperationProjection`, so handlers still call the projection DAO
 directly and `AdminFacade` keeps a `when` that gains a branch per aggregate.
 
-Verify with `./gradlew clean test` (95 tests). Prefer `clean` — incremental builds have twice
+Verify with `./gradlew clean test` (155 tests). Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
 **Not yet enforced, and assumed by nothing:** workspace *ownership* (any authenticated caller can
@@ -159,7 +184,11 @@ API resources are nested under `/workspaces/{workspaceId}/`.
 
 Statuses are `NEW` → `ACTIVE` ↔ `ARCHIVED`, and `DELETED` from either (terminal); `NEW` is the
 former `DRAFT`. Import is permitted **only** into a `NEW` workspace and is permanently closed
-afterwards. `ARCHIVED` is read-only **system-wide** — every command is rejected, checked once at
+afterwards. **`NEW → ACTIVE` has no endpoint**: the first successful command activates the
+workspace (at the command entry point, after dispatch), and import activates at its own boundary.
+So the first manually entered operation closes import for that workspace — the UI has to say so.
+The category seed at workspace creation must bypass the command facade, or a workspace activates
+itself at birth. `ARCHIVED` is read-only **system-wide** — every command is rejected, checked once at
 the command entry point rather than per handler. Deletion is soft but terminal — there is no restore, and a retention job hard-deletes `DELETED`
 workspaces after a configurable window (default 30 days) by cascade. Archiving is the recoverable
 path and belongs in the main UI; deletion belongs in settings, warned as unrecoverable and
@@ -167,6 +196,11 @@ confirmed by typing the workspace name — a UI affordance only, the API takes n
 parameter. Status is stored explicitly,
 never inferred from emptiness ("start empty" produces an `ACTIVE` workspace with no data), and
 emptiness excludes the four seeded system categories or a fresh workspace fails its own check.
+
+Workspaces use **optimistic locking** (§10.0.1): the client sends `version` on `PUT` (body) and
+`DELETE` (`?version=`), a mismatch is 409, and every write bumps it. Archive/unarchive don't
+require it — they're reversible. Don't copy versioning into other aggregates without asking
+whether a stale-view write is actually harmful there.
 
 **The workspace record is the one thing that is not event-sourced** — `t_workspaces` is an
 authoritative table written directly, never rebuilt. It is the tenant boundary, not an entity

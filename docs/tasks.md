@@ -48,16 +48,21 @@ events, and the projection rows are identical.
 
 ### Workspace
 
-- [ ] **1.1** Migration: `workspaces` (UUID PK, name/slug, `status`, `default_currency`)
-- [ ] **1.2** Create workspace → `NEW`; seed the four system categories in the same
-      transaction (§4.7): both roots, both `Others`
+- [x] ~~**1.1** Migration: `workspaces` (UUID PK, name/slug, `status`, `default_currency`)~~
+      — plus `updated_at` and `version` (optimistic locking, §10.0.1)
+      — plus `t_users` and `owner_id` pulled forward from M5 (§7.4), and the `ON DELETE CASCADE`
+      foreign keys from `t_events` and `t_operations`. No slug.
+- [~] **1.2** Create workspace → `NEW` — **done**; seeding the four system categories in the same
+      transaction (§4.7) waits for categories (1.11–1.13)
 - [ ] **1.3** Emptiness check as a single reusable function scanning every table carrying
       `workspace_id` (§4.2)
-- [ ] **1.4** Status transitions (§4.1.1): `NEW → ACTIVE` ("start empty" action, and the hook
-      import will use), `ACTIVE ↔ ARCHIVED`, `→ DELETED`; `ARCHIVED` read-only enforced once at
-      the command entry point
-- [ ] **1.5** Delete workspace — soft, a `DELETED` status; anchors remain the only physical
-      deletion in the system
+- [x] ~~**1.4** Status transitions (§4.1.1): `ACTIVE ↔ ARCHIVED`, `→ DELETED`, and `NEW → ACTIVE`
+      **implicitly** — the first successful command activates the workspace, and import does the
+      same at its own boundary. No activation endpoint. `ARCHIVED` read-only enforced once at the
+      command entry point, beside the activation~~ — `requireWritable` / `requireReadable` guard
+      both facades
+- [x] ~~**1.5** Delete workspace — soft, a `DELETED` status; anchors remain the only physical
+      deletion in the system~~ — requires the caller's `version` (§10.0.1)
 - [ ] **1.5b** Retention job: hard-delete workspaces `DELETED` longer than a configurable
       window (default 30 days), one transaction each, via `ON DELETE CASCADE`. Refuses a
       non-positive window; the cutoff is a parameter so the test need not wait a month

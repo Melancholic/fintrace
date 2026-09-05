@@ -321,6 +321,13 @@ categories, operations, transfers, corrections. Every domain entity carries a
 | Cardinality | Multiple workspaces supported from the start |
 | API exposure | Workspace in the path: `/workspaces/{id}/...` |
 | Human reference | Optional name/slug; the UUID is the identity |
+| Owner | `owner_id`, `NOT NULL`, referencing `t_users` — set server-side from the resolved caller, never accepted from a client |
+
+**Ownership is stored from day one even though authorisation lands at M5** (§7.4). Adding the
+column later would mean backfilling an owner for existing workspaces and picking one arbitrarily;
+having it now also lets the ownership check in the command facade be written and tested against
+the stub identity, so M5 replaces *where the caller comes from* rather than introducing the check
+itself.
 
 **Multi-tenancy note:** this is what makes the "designed for multiple users, used by one"
 requirement real rather than aspirational. Data isolation is by workspace; user-to-workspace
@@ -384,12 +391,33 @@ name exists to slow a human hand down, not to authorise anything.
 path (below) produces an `ACTIVE` workspace containing nothing, which is indistinguishable
 from a `NEW` one by data alone.
 
-**Two ways to leave `NEW`:**
+**Two ways to leave `NEW`, neither of them an endpoint of its own:**
 
-1. **Successful import** — the initialisation path described in §4.2.
-2. **Start empty** — an explicit user action for workspaces that do not originate from
-   MoneyOK. Without this, creating a fresh workspace later would require importing a dummy
-   dump.
+1. **Successful import** — the initialisation path described in §4.2. The import transaction
+   activates the workspace as its last step.
+2. **The first write** — creating an operation (later: an account, a category of the user's own)
+   activates the workspace, which is what "start empty" means in practice for a workspace that
+   does not originate from MoneyOK.
+
+> **Revised at M1.** "Start empty" was previously an explicit user action. It is now implicit in
+> the first write: a dedicated endpoint would ask the user to declare an intention they have
+> already demonstrated by typing an operation into an empty workspace.
+>
+> **The consequence has to reach the user.** Since import is permitted only from `NEW`, the first
+> manual entry permanently closes import for that workspace — a one-way door behind an ordinary
+> action. The UI must say so at that moment, the way deletion is confirmed (§4.1.1), or the door
+> closes silently.
+
+**Where the transition lives:** in the command entry point, beside the status guard, which has
+already loaded the workspace to decide whether the command is allowed at all. Activating *after* a
+successful dispatch, in the same transaction, means a rejected command activates nothing. Putting
+it in a handler instead would oblige every future handler to remember, and would resolve the
+caller's identity below the boundary that owns it.
+
+**The category seed is the exception.** Creating a workspace seeds four system categories (§4.7);
+those must not travel through the command entry point, or a workspace would activate itself at
+birth and close import before the user ever saw it. They are written inside the creation
+transaction, below the facade.
 
 **User flow:**
 
@@ -955,7 +983,11 @@ transfers table — contradicts reading everything through `/operations`.
 **`accounts`** — `name`, `currency`, `icon`, `archived`. No stored balance (§4.6).
 
 **`workspaces`** — not a projection at all: an authoritative table (§4.1.1) carrying `name`,
-`status`, `default_currency` and `deleted_at` (what the retention job queries).
+`status`, `owner_id`, `default_currency`, `created_at`, `updated_at`, `deleted_at` (what the
+retention job queries) and `version` (§10.0.1).
+
+**`users`** — likewise authoritative, and likewise outside the event log: a projection of the
+external IdP (§7.4), carrying `external_id`, `username` and nothing role-shaped.
 
 **`categories`** — `name`, `icon`, `parent_id`, `kind`, `deleted`, `system`.
 `kind` is derivable from the branch but stored anyway — cheaper than walking to the root on
@@ -1233,6 +1265,27 @@ Enforced **server-side in Core**, always. Clients may hide commands they cannot 
 client never decides what its user is allowed to do — this matters as soon as the CLI (M7)
 exists alongside the web UI.
 
+#### The local users table
+
+Identity is owned by the external IdP (§3.4), but Core needs something for `owner_id` to
+reference, so `t_users` exists as a **local projection of that directory**, not a user registry:
+
+| Column | Meaning |
+|---|---|
+| `id` | UUID, the identity Core uses everywhere — `owner_id` points here |
+| `external_id` | the OIDC `sub` claim; the link back to the IdP |
+| `username` | display and, until M5, the value the stub resolves by |
+
+`external_id` rather than username or email, because both of those are mutable in the IdP while
+`sub` is not — keying on email would mean a user changing their address loses their workspaces.
+A local UUID rather than the `sub` itself, so re-federating or moving off Keycloak rewrites one
+column instead of every `owner_id`.
+
+**A single stub row is seeded by the migration** (`username = 'testuser'`, `external_id =
+'stub:testuser'`) and `IdentityProvider` resolves it by username. Both the row and that lookup are
+temporary: M5 replaces the lookup with `sub` → `external_id` and deletes the seed, alongside the
+bootstrap decision below. Roles are deliberately **not** stored here — they arrive in the token.
+
 #### Bootstrapping the first admin
 
 On first start, Core emits a random token to the log. The operator signs in through SSO, then
@@ -1410,13 +1463,50 @@ A command-style surface (`POST /operations/{id}/revisions`) was rejected: it is 
 operation under a less familiar name, and it would make the UI pay for an implementation
 choice made inside Core.
 
+### 10.0.1 Concurrency: optimistic locking on workspaces
+
+**Decision: workspaces carry a `version`, supplied by the client on every mutating request and
+checked in the `UPDATE` predicate.** A mismatch answers **409**; the losing write does not apply.
+
+Two different races have to be told apart, because only one of them needs this:
+
+| Race | What happens | What handles it |
+|---|---|---|
+| Two overlapping server transactions | both write the same row | the conditional `UPDATE` — `WHERE id = … AND status IN (…)` is an atomic compare-and-set, and Postgres holds the row lock for the statement |
+| A stale client view | `GET` at 10:00, `PUT` at 10:02, someone else wrote in between | **only** a version that travels to the client and back |
+
+Pessimistic locking was considered and rejected **as a replacement**: it addresses the first race,
+which needs no help, and cannot address the second — the gap spans two HTTP requests, and holding
+a transaction open across them would be a distributed lock with timeouts and abandoned sessions.
+It remains the right tool where a decision spans statements inside one transaction, and M2's
+import is exactly that: `SELECT … FOR UPDATE` on the workspace row while the emptiness check runs,
+before activation.
+
+**Where the version is required, and where it is not:** `PUT /workspaces/{id}` carries it in the
+body; `DELETE /workspaces/{id}` requires it as a query parameter, because deletion is terminal and
+a stale-view delete is the one mistake with no remedy. Archive and unarchive do not require it —
+they are reversible, so acting on a stale view costs a click. Every mutation bumps the version
+regardless, or "the state I last saw" would stop meaning anything.
+
+A query parameter rather than `If-Match` because the CLI (M7) is a planned first-class client:
+`--version 7` maps to `?version=7`, while a header forces the CLI to translate and a `curl` user
+to scrape it from a previous response. **Every write that leaves the resource readable answers
+with it** (`200` + the workspace, carrying the new version), so a client can chain a second
+conditional write without a fetch in between; `DELETE` answers `204`, having nothing to return.
+
+**Honestly labelled:** at this volume this is *needed to learn*, not *needed to work* — a single
+user rarely races themselves. It is kept because deletion is irreversible and because implementing
+it once is worth the column. **It is not to be copied reflexively into every aggregate**: each one
+should be asked whether a stale-view write is actually harmful. For an operation's amount —
+visible and cheap to correct — it probably is not.
+
 ### 10.1 Resources
 
 All under `/workspaces/{workspaceId}/`.
 
 | Resource | Notes |
 |---|---|
-| `/workspaces` | Create, rename, activate, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) |
+| `/workspaces` | Create, rename, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) and requires `?version=`. Activation is implicit (§4.1.1), so there is no activate endpoint |
 | `/accounts` | CRUD; `DELETE` archives rather than deletes (§4.8) |
 | `/accounts/{id}/anchors` | `POST` to create, `DELETE` to remove — see below |
 | `/categories` | CRUD; `DELETE` is a soft delete (§4.7) |
