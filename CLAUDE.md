@@ -13,19 +13,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 and `POST /admin/api/v1/workspaces/{id}/replay` clears the projection and rebuilds it from the
 event log. Only Core exists — the importer, BFF and web are later milestones.
 
-**Done in M1 so far** (6 of 27 task items; the two shapes every later aggregate copies are both
-finished):
+**`docs/status.md` is the live progress record** — what is done, what is next, and the known
+gaps. Read it first; it is regenerated whenever the status is reviewed, and it is the one file
+that is expected to go stale between updates.
 
-- **1.1** `t_workspaces` + `t_users`, `owner_id`, `version`, `updated_at`, and `workspace_id` as a
-  real foreign key with `ON DELETE CASCADE`.
-- **1.2** create → `NEW` — *except* seeding the four system categories, which waits for categories.
-- **1.4** every transition, including implicit `NEW → ACTIVE`; `requireWritable` guards
-  `CommandFacade`, `requireReadable` guards `ProjectionFacade`.
-- **1.5** soft delete, guarded by the caller's `version`.
-- **1.17** operation revise / cancel (the cancelled row is removed, not flagged) with endpoints
-  and command-time validation — the operation must exist in the command's workspace, and
-  `occurredAt` may not be in the future.
-- Workspace CRUD over seven endpoints, all documented in the OpenAPI spec.
+**`t_users` is pulled forward from M5** (§7.4): an authoritative table, not event-sourced, holding
+a local UUID plus the IdP's `sub` in `external_id`. One stub row is seeded by `V0004` and
+`IdentityProvider` resolves the caller by subject — both the seed and that lookup are what M5
+deletes. `owner_id` is always stamped server-side; no DTO carries it.
 
 Layering, in the shape later aggregates should follow: controller (`@Valid`, request shape) →
 facade (transaction boundary, resolves identity once) → service (domain rules, takes `userId`
@@ -33,29 +28,13 @@ explicitly, `@Transactional(MANDATORY)` so it cannot be called from outside a tr
 (SQL, returns row counts rather than asserting). Validation services live beside the services and
 hold rules that must also hold for the CLI and the importer.
 
-**`t_users` is pulled forward from M5** (§7.4): an authoritative table, not event-sourced, holding
-a local UUID plus the IdP's `sub` in `external_id`. One stub row is seeded by `V0004`
-(`username = 'testuser'`) and `IdentityProvider` resolves it by username — both the seed and that
-lookup are what M5 deletes. `owner_id` is always stamped server-side; no DTO carries it.
-
-**Not yet started:** the emptiness check (1.3), the retention job (1.5b), 1.6's DAO guard test,
-and everything account-, category-, transfer- and anchor-shaped (1.7–1.16, 1.18–1.26).
-
-**Do the two deferred shapes before accounts (1.7)** — accounts are the second event-sourced
-aggregate, which is where both stop being free.
-
-Two agreed shapes from `docs/plans/M1.md` are **not** implemented yet, both deliberately deferred
-rather than rejected: the `occurredAt` split (every command still declares one, so cancel carries
-a business date it has no use for), and `ProjectionChange` / `ProjectionApplier` — a deletion is
-currently modelled as a `DeleteOperationProjection`, so handlers still call the projection DAO
-directly and `AdminFacade` keeps a `when` that gains a branch per aggregate.
-
 Verify with `./gradlew clean test` (155 tests). Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
-**Not yet enforced, and assumed by nothing:** workspace *ownership* (any authenticated caller can
-reach any workspace) and real authentication. Both land at M5; `/admin/**` is already gated on the
-`ADMIN` role.
+**Workspace ownership is enforced now** — `owner_id`, plus `requireWritable` on the command path
+and `requireReadable` on the read path; a workspace belonging to someone else answers 404 rather
+than 403. **Real authentication is not**: the caller is whoever the configured stub user is until
+M5. `/admin/**` is gated on the `ADMIN` role.
 
 `IdentityProvider` in `security/` is the single place caller identity is resolved (task 0.10) —
 M5 replaces its implementation, and nothing else may read the security context.
@@ -63,7 +42,8 @@ M5 replaces its implementation, and nothing else may read the security context.
 The command pipeline is the shape every later aggregate copies: a sealed `Command<R>` hierarchy
 (create returns `UUID`, revise/cancel return `Unit`), routed by `CommandDispatcher` to a handler
 that validates, appends the event, then writes the projection. `CommandFacade` owns the
-transaction boundary and is where workspace-ownership checks will land at M5.
+transaction boundary, resolves the caller once, and guards the workspace's status before
+dispatching.
 
 ```bash
 cd fintrace-core
