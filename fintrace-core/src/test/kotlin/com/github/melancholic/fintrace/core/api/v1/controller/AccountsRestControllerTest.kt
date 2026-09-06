@@ -97,7 +97,7 @@ class AccountsRestControllerTest(
     fun `hides archived accounts from the listing by default`() {
         val kept = createdId(name = "kept")
         val archived = createdId(name = "gone")
-        mvc.perform(post("$accountsPath/$archived/archive").with(user(USER)).with(csrf()))
+        mvc.perform(delete("$accountsPath/$archived").with(user(USER)).with(csrf()))
 
         // §4.8: an archived account is not offered for selection, but is still reachable.
         mvc.perform(get(accountsPath).with(user(USER)))
@@ -140,17 +140,19 @@ class AccountsRestControllerTest(
     }
 
     @Test
-    fun `archives and unarchives an account`() {
+    fun `archives an account with DELETE and restores it`() {
         val id = createdId()
 
-        // Each answers with the account, so a client needs no second request to render the change.
-        mvc.perform(post("$accountsPath/$id/archive").with(user(USER)).with(csrf()))
+        // DELETE means "make it go away as far as the model allows": an account is archived,
+        // never deleted (§4.8), and POST /restore is the way back. Each answers with the account,
+        // so a client needs no second request to render the change.
+        mvc.perform(delete("$accountsPath/$id").with(user(USER)).with(csrf()))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.archived").value(true))
         mvc.perform(get("$accountsPath/$id").with(user(USER)))
             .andExpect(jsonPath("$.archived").value(true))
 
-        mvc.perform(delete("$accountsPath/$id/archive").with(user(USER)).with(csrf()))
+        mvc.perform(post("$accountsPath/$id/restore").with(user(USER)).with(csrf()))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.archived").value(false))
         mvc.perform(get("$accountsPath/$id").with(user(USER)))
@@ -200,7 +202,8 @@ class AccountsRestControllerTest(
         mvc.perform(
             put("$accountsPath/$id").contentType(MediaType.APPLICATION_JSON).content("""{"name":"x"}""")
         ).andExpect(status().isForbidden)
-        mvc.perform(post("$accountsPath/$id/archive")).andExpect(status().isForbidden)
+        mvc.perform(delete("$accountsPath/$id")).andExpect(status().isForbidden)
+        mvc.perform(post("$accountsPath/$id/restore")).andExpect(status().isForbidden)
 
         assertEquals(1, count(), "nothing may be written for an unauthenticated caller")
     }

@@ -1528,14 +1528,14 @@ visible and cheap to correct — it probably is not.
 
 All under `/workspaces/{workspaceId}/`.
 
-| Resource | Notes |
-|---|---|
-| `/workspaces` | Create, rename, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) and requires `?version=`. Activation is implicit (§4.1.1), so there is no activate endpoint |
-| `/accounts` | CRUD; `DELETE` archives rather than deletes (§4.8) |
-| `/accounts/{id}/anchors` | `POST` to create, `DELETE` to remove — see below |
-| `/categories` | CRUD; `DELETE` is a soft delete (§4.7) |
-| `/operations` | CRUD; **read surface for transfer legs as well** |
-| `/transfers` | Write surface for transfers |
+| Resource                 | Notes                                                                                                                                                            |
+|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `/workspaces`            | Create, rename, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) and requires `?version=`. Activation is implicit (§4.1.1), so there is no activate endpoint |
+| `/accounts`              | CRUD; `DELETE` archives rather than deletes (§4.8), `POST /{id}/restore` reverses it                                                                             |
+| `/accounts/{id}/anchors` | `POST` to create, `DELETE` to remove — see below                                                                                                                 |
+| `/categories`            | CRUD; `DELETE` is a soft delete (§4.7)                                                                                                                           |
+| `/operations`            | CRUD; **read surface for transfer legs as well**                                                                                                                 |
+| `/transfers`             | Write surface for transfers                                                                                                                                      |
 
 ### 10.2 Deletion semantics
 
@@ -1546,6 +1546,17 @@ query by hand would be error-prone.
 `DELETE /workspaces/{id}` is likewise a status change (§4.1.1). A deleted workspace is absent
 from listings and returns 404 — not 410, so that its existence is not disclosed to a caller who
 cannot use it, which is what an ownership failure will return too (§7.4).
+
+**`DELETE` means "make this go away as far as the model allows", and the reversal is named after
+what was undone.** For a workspace that is the `DELETED` status, reversed by nothing — deletion is
+terminal (§4.1.1). For an account it is archiving, reversed by `POST /accounts/{id}/restore`,
+because an account is never deleted (§4.8). Workspaces additionally expose archiving as its own
+reversible pair (`POST` / `DELETE /workspaces/{id}/archive`), since they have both gestures and an
+account has only one.
+
+The alternative — `POST`/`DELETE /accounts/{id}/archive`, mirroring workspaces exactly — was
+considered and rejected: it leaves `DELETE /accounts/{id}` either unimplemented, so a client
+pressing Delete gets a 405, or implemented as a second spelling of the same thing.
 
 Version history is retained in the event store but is **not exposed in the MVP**. A
 `GET /operations/{id}/history` endpoint is cheap to add later, but the UI for it is not

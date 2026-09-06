@@ -71,10 +71,13 @@ events, and the projection rows are identical.
 
 ### Accounts
 
-- [ ] **1.7** Migration + projection: `name`, `currency`, `icon`, `archived`
-- [ ] **1.8** Create / rename / archive / unarchive commands and events
-- [ ] **1.9** Opening balance becomes the first anchor (§4.6)
-- [ ] **1.10** CRUD endpoints; `DELETE` archives
+- [x] ~~**1.7** Migration + projection: `name`, `currency`, `icon`, `archived`~~ — currency is
+  immutable after creation (§4.8)
+- [x] ~~**1.8** Create / rename / archive / unarchive commands and events~~ — one
+  `SetAccountArchivedCommand` with a flag rather than two commands; archive is `REVISED`,
+  never `CANCELLED`
+- [ ] **1.9** Opening balance becomes the first anchor (§4.6) — waits for anchors (1.21)
+- [x] ~~**1.10** CRUD endpoints; `DELETE` archives~~ — reversed by `POST /{id}/restore` (§10.2)
 
 ### Categories
 

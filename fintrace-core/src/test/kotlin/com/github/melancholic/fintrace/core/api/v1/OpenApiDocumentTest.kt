@@ -85,8 +85,8 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
 			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts'].get.summary").exists())
 			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}'].get.summary").exists())
 			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}'].put.summary").exists())
-			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/archive'].post.summary").exists())
-			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/archive'].delete.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}'].delete.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/restore'].post.summary").exists())
 	}
 
 	@Test

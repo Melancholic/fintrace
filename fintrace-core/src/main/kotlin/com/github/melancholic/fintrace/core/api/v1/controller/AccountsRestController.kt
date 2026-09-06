@@ -126,7 +126,7 @@ class AccountsRestController(
         ApiResponse(responseCode = "404", description = "No such account in this workspace"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
-    @PostMapping("/{accountId}/archive")
+    @DeleteMapping("/{accountId}")
     fun archiveAccount(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("accountId") accountId: UUID,
@@ -141,14 +141,14 @@ class AccountsRestController(
         return ResponseEntity.ok(mapper.toResponse(projection))
     }
 
-    @Operation(summary = "Unarchive an account")
+    @Operation(summary = "Restore an archived account")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Active, or already active"),
         ApiResponse(responseCode = "404", description = "No such account in this workspace"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
-    @DeleteMapping("/{accountId}/archive")
-    fun unarchiveAccount(
+    @PostMapping("/{accountId}/restore")
+    fun restoreAccount(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("accountId") accountId: UUID
     ): ResponseEntity<AccountResponse> {
