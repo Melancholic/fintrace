@@ -5,6 +5,7 @@ import com.github.melancholic.fintrace.core.domain.event.EntityType
 import com.github.melancholic.fintrace.core.domain.event.EventType
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationRevisedV1
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
+import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.OCCURRED_AT
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.OPERATION
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.RECORDED_AT
@@ -20,12 +21,12 @@ import kotlin.test.assertTrue
 class ReviseOperationCommandHandlerTest {
 
 	private val events = RecordingEventsDAO()
-	private val projections = RecordingProjectionDAO()
+	private val projections = RecordingProjectionApplier()
 	private val validation = RecordingValidation()
 
 	private fun handler(validation: RecordingValidation = this.validation) = ReviseOperationCommandHandler(
 		timestampProvider = FixedTimestampProvider(RECORDED_AT),
-		operationProjectionDAO = projections,
+		projectionApplier = projections,
 		validationService = validation,
 		eventsDAO = events,
 	)
@@ -35,8 +36,8 @@ class ReviseOperationCommandHandlerTest {
 		handler().handle(command())
 
 		assertEquals(1, events.registered.size)
-		assertEquals(1, projections.upserted.size)
-		assertTrue(projections.removed.isEmpty(), "a revision removes nothing")
+		assertEquals(1, projections.operations.size)
+		assertTrue(projections.removals.isEmpty(), "a revision removes nothing")
 	}
 
 	@Test
@@ -80,7 +81,10 @@ class ReviseOperationCommandHandlerTest {
 		handler().handle(command(amount = BigDecimal("42.0000")))
 
 		val payload = events.registered.single().payload as OperationRevisedV1
-		assertEquals(payload.asProjection(), projections.upserted.single())
+		assertEquals(
+			(payload.projectionChange() as ProjectionChange.Upsert).rows.single(),
+			projections.upsertedRows.single(),
+		)
 	}
 
 	@Test
@@ -93,7 +97,7 @@ class ReviseOperationCommandHandlerTest {
 		// to be stopped before the append — not compensated afterwards.
 		assertEquals(1, rejecting.calls)
 		assertTrue(events.registered.isEmpty(), "no event may be written for a rejected command")
-		assertTrue(projections.upserted.isEmpty(), "no projection may be written either")
+		assertTrue(projections.applied.isEmpty(), "no projection may be written either")
 	}
 
 	private fun command(

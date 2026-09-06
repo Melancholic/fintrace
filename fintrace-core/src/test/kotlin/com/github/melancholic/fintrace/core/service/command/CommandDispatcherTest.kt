@@ -49,7 +49,6 @@ class CommandDispatcherTest {
 				CancelOperationCommand(
 					workspaceId = UUID.randomUUID(),
 					operationId = UUID.randomUUID(),
-					occurredAt = LocalDateTime.now(),
 				)
 			)
 		}

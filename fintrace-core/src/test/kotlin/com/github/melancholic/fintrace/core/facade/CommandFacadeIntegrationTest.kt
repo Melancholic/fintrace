@@ -260,9 +260,7 @@ class CommandFacadeIntegrationTest(
 		operationId: UUID,
 		workspaceId: UUID = this.workspaceId,
 		occurredAt: LocalDateTime = OCCURRED_AT,
-	) = CancelOperationCommand(
-		workspaceId = workspaceId, operationId = operationId, occurredAt = occurredAt,
-	)
+	) = CancelOperationCommand(workspaceId = workspaceId, operationId = operationId)
 
 	private fun count(table: String) =
 		jdbc.sql("SELECT count(*) FROM $table").query(Int::class.java).single()

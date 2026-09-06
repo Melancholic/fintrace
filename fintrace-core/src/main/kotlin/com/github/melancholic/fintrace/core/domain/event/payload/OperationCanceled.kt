@@ -1,11 +1,16 @@
 package com.github.melancholic.fintrace.core.domain.event.payload
 
-import com.github.melancholic.fintrace.core.domain.projection.DeleteOperationProjection
+import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
+import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import java.time.LocalDateTime
 import java.util.*
 
 sealed interface OperationCanceled : OperationEventPayload {
-    override fun asProjection(): DeleteOperationProjection
+    override fun projectionChange() = ProjectionChange.Remove(
+        ProjectionTarget.OPERATION,
+        workspaceId,
+        setOf(id)
+    )
 }
 
 /**
@@ -16,18 +21,8 @@ data class OperationCanceledV1(
     override val id: UUID,
     override val workspaceId: UUID,
     override val version: Int = VERSION,
-    override val occurredAt: LocalDateTime,
     override val recordedAt: LocalDateTime,
 ) : OperationCanceled {
-
-    override fun asProjection(): DeleteOperationProjection {
-        return DeleteOperationProjection(
-            id = id,
-            workspaceId = workspaceId,
-            occurredAt = occurredAt,
-            recordedAt = recordedAt
-        )
-    }
 
     companion object {
         const val TYPE = "operation.canceled.v1"

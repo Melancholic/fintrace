@@ -3,6 +3,8 @@ package com.github.melancholic.fintrace.core.domain.event.payload
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.github.melancholic.fintrace.core.domain.projection.Projection
+import com.github.melancholic.fintrace.core.domain.projection.TemporalProjection
+import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import java.time.LocalDateTime
 import java.util.*
 
@@ -27,6 +29,9 @@ sealed interface EventPayload {
 	val id: UUID
 	val workspaceId: UUID
 	val recordedAt: LocalDateTime
+	fun projectionChange(): ProjectionChange
+}
+
+sealed interface TemporalEventPayload : EventPayload {
 	val occurredAt: LocalDateTime
-	fun asProjection(): Projection
 }

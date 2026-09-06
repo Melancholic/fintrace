@@ -10,4 +10,4 @@ data class OperationProjection(
     val amount: BigDecimal,
     override val occurredAt: LocalDateTime,
     override val recordedAt: LocalDateTime,
-) : Projection
+) : TemporalProjection

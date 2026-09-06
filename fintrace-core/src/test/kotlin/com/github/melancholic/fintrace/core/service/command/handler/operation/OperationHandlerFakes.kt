@@ -1,7 +1,6 @@
 package com.github.melancholic.fintrace.core.service.command.handler.operation
 
 import com.github.melancholic.fintrace.core.dao.EventsDAO
-import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
@@ -9,7 +8,11 @@ import com.github.melancholic.fintrace.core.domain.event.EntityType
 import com.github.melancholic.fintrace.core.domain.event.Event
 import com.github.melancholic.fintrace.core.domain.event.EventType
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
+import com.github.melancholic.fintrace.core.domain.event.payload.TemporalEventPayload
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.domain.projection.Projection
+import com.github.melancholic.fintrace.core.service.projection.ProjectionApplier
+import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import com.github.melancholic.fintrace.core.validation.OperationValidationService
 import java.time.LocalDateTime
@@ -37,31 +40,35 @@ internal class RecordingEventsDAO : EventsDAO {
 		entityId = payload.id,
 		eventType = eventType,
 		payload = payload,
-		occurredAt = payload.occurredAt,
+		// Mirrors EventsDAOImpl: an event with no business date is dated when it was recorded.
+		occurredAt = (payload as? TemporalEventPayload)?.occurredAt ?: payload.recordedAt,
 		recordedAt = payload.recordedAt,
 	).also { registered += it }
 
 	override fun loadAll(workspaceId: UUID): List<Event> = registered
 }
 
-internal class RecordingProjectionDAO : OperationProjectionDAO {
-	val upserted = mutableListOf<OperationProjection>()
-	val removed = mutableListOf<Pair<UUID, UUID>>()
+/** Records the changes a handler applies, without any of the SQL behind them. */
+internal class RecordingProjectionApplier : ProjectionApplier {
+	val applied = mutableListOf<ProjectionChange>()
+	var cleared = 0
 
-	override fun createOrUpdate(projection: OperationProjection): UUID {
-		upserted += projection
-		return projection.id
+	override fun apply(change: ProjectionChange) {
+		applied += change
 	}
 
-	override fun remove(workspaceId: UUID, id: UUID) {
-		removed += workspaceId to id
+	override fun clear(workspaceId: UUID) {
+		cleared++
 	}
 
-	override fun exists(workspaceId: UUID, operationId: UUID): Boolean = true
-	override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection =
-		throw UnsupportedOperationException()
+	val upsertedRows: List<Projection>
+		get() = applied.filterIsInstance<ProjectionChange.Upsert>().flatMap { it.rows }
 
-	override fun removeAll(workspaceId: UUID): Unit = throw UnsupportedOperationException()
+	val operations: List<OperationProjection>
+		get() = upsertedRows.filterIsInstance<OperationProjection>()
+
+	val removals: List<ProjectionChange.Remove>
+		get() = applied.filterIsInstance<ProjectionChange.Remove>()
 }
 
 /** Rejects on demand, so a test can prove nothing is written when a command is invalid. */

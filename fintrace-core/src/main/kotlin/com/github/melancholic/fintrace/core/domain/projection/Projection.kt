@@ -6,6 +6,9 @@ import java.util.*
 sealed interface Projection {
     val id: UUID
     val workspaceId: UUID
-    val occurredAt: LocalDateTime
     val recordedAt: LocalDateTime
+}
+
+sealed interface TemporalProjection : Projection {
+    val occurredAt: LocalDateTime
 }

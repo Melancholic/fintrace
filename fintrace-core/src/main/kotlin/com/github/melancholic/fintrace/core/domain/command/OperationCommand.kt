@@ -26,5 +26,4 @@ data class ReviseOperationCommand(
 data class CancelOperationCommand(
     override val workspaceId: UUID,
     override val operationId: UUID,
-    override val occurredAt: LocalDateTime,
 ) : ExistingOperationCommand<Unit>, CancelCommand<Unit>

@@ -39,7 +39,6 @@ class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper)
 	private val canceled = OperationCanceledV1(
 		id = OPERATION_ID,
 		workspaceId = WORKSPACE_ID,
-		occurredAt = OCCURRED_AT,
 		recordedAt = RECORDED_AT,
 	)
 

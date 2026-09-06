@@ -58,6 +58,8 @@ class CommandFacadeTransactionTest(
 
 			override fun remove(workspaceId: UUID, id: UUID) = throw UnsupportedOperationException()
 
+			override fun remove(workspaceId: UUID, ids: Set<UUID>) = throw UnsupportedOperationException()
+
 			override fun exists(workspaceId: UUID, operationId: UUID): Boolean =
 				throw UnsupportedOperationException()
 		}

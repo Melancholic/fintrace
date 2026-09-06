@@ -139,7 +139,7 @@ class AdminFacadeReplayTest(
 	fun `replays a cancellation as an absent row`() {
 		val id = create()
 		commandFacade.processCommand(
-			CancelOperationCommand(workspaceId = workspace, operationId = id, occurredAt = OCCURRED_AT)
+			CancelOperationCommand(workspaceId = workspace, operationId = id)
 		)
 
 		jdbc.sql("DELETE FROM t_operations").update()
@@ -162,9 +162,7 @@ class AdminFacadeReplayTest(
 			)
 		)
 		commandFacade.processCommand(
-			CancelOperationCommand(
-				workspaceId = workspace, operationId = cancelled, occurredAt = OCCURRED_AT,
-			)
+			CancelOperationCommand(workspaceId = workspace, operationId = cancelled)
 		)
 		val before = operations(workspace)
 

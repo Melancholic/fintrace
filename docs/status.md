@@ -1,6 +1,6 @@
 # fintrace — current status
 
-**Last updated:** 2026-09-06 · **Milestone:** M1 (in progress) · **Suite:** 155 tests green
+**Last updated:** 2026-09-06 (late) · **Milestone:** M1 (in progress) · **Suite:** 155 tests green
 (`cd fintrace-core && ./gradlew clean test`)
 
 > **This file is regenerated, not appended to.** It records where development stands right now;
@@ -33,6 +33,10 @@ copies — the workspace lifecycle and the operation aggregate — are finished.
   `requireWritable` guards the command path, `requireReadable` the read path
 - **1.5** soft delete, guarded by the caller's `version`
 - **1.17** operation revise / cancel, with the cancelled row removed rather than flagged
+- **Step A** — the two shapes deferred from step 1 of `plans/M1.md`, done ahead of accounts:
+  `Projection` / `TemporalProjection` and `Command` / `TemporalCommand` split so a non-temporal
+  aggregate cannot be forced to invent a business date, and `ProjectionChange` /
+  `ProjectionApplier` replacing `asProjection()` and `DeleteOperationProjection`
 - Not on the task list: identity and ownership pulled forward from M5, optimistic locking
   (§10.0.1), a validation service per area, OpenAPI across all three controllers
 
@@ -46,21 +50,14 @@ counts the service turns into 404 / 409 / 500). Accounts and categories should c
 
 ## What is next
 
-**Step A — the two deferred shapes, before any account code.** Both were agreed in
-`plans/M1.md` and deliberately postponed; accounts are the second event-sourced aggregate, which
-is where they stop being free.
-
-1. Split `Projection.occurredAt` into a `TemporalProjection` — an account has no business date.
-2. Split `occurredAt` on commands and payloads (`TemporalCommand` / `TemporalEventPayload`),
-   with `EventsDAO` falling back to `recorded_at`. Today cancel carries a date it cannot use.
-3. `ProjectionChange` / `ProjectionApplier` — removes `DeleteOperationProjection`, stops handlers
-   writing projections directly, and stops `AdminFacade`'s `when` growing per aggregate.
-
-**Step B — accounts (1.7, 1.8, 1.10).** `V0006`, payloads, create / rename / archive / unarchive,
-`DELETE` archives, and the rebuild-equality test extended to a second aggregate. Decisions to make
-while writing it: archive is `REVISED` not `CANCELLED`; no optimistic locking (a stale-view rename
-is cheap to correct); extract the ISO-4217 currency check so accounts and workspaces share one;
-archived accounts reject writes (§4.8), which operations will call at 1.16.
+**Accounts (1.7, 1.8, 1.10) — unblocked.** Step A is done, so the second event-sourced aggregate
+can be added without carrying a business date it has no use for, and `ProjectionApplier`'s
+exhaustive `when` will refuse to compile until `AccountProjection` is wired into it. `V0006`, payloads, create / rename / archive / unarchive, `DELETE`
+archives, and the rebuild-equality test extended to a second aggregate — the first real proof the
+replay path generalises. Decisions to make while writing it: archive is `REVISED` not `CANCELLED`;
+no optimistic locking (a stale-view rename is cheap to correct); extract the ISO-4217 currency
+check so accounts and workspaces share one; archived accounts reject writes (§4.8), which
+operations will call at 1.16.
 
 **Then:** categories (1.11–1.15) → operations' full field set (1.16) → transfers (1.18–1.20) →
 anchors and balances (1.21–1.26) → the emptiness check (1.3) and retention job (1.5b), which can
@@ -75,7 +72,7 @@ From git history, 2026-08-30 → 2026-09-06: **17 commits over 5 active days** (
 a session, so their timestamps say when work was committed, not how long it took — no hour figures
 are inferred here.
 
-Tree: 1,965 LOC main across 51 files, 2,860 LOC tests across 21, 4,582 lines of docs. Test-to-code
+Tree: 2,017 LOC main across 52 files, 2,873 LOC tests across 21, ~4,700 lines of docs. Test-to-code
 ratio **1.46 : 1**. Nearly half of everything written is documentation, which for a project whose
 first goal is practising system design is on-plan rather than overhead.
 
@@ -107,7 +104,8 @@ Flagged, agreed, not yet done — none of them blocking:
 
 | Gap | Where it bites |
 |---|---|
-| `occurredAt` split and `ProjectionChange` not implemented | accounts (1.7) — see Step A |
+| `ProjectionApplier.clear` only clears `t_operations`, with no compiler help | the first two-aggregate rebuild-equality test; a shared DAO interface plus `List<…>` injection would cover new tables by construction |
+| `ProjectionTarget` lists four values, only `OPERATION` wired, so `remove` needs an `else -> error` | trimming the enum to what exists makes a missing branch a compile error |
 | Emptiness check (1.3) | M2 import cannot verify a `NEW` workspace is empty |
 | Retention job (1.5b) | `DELETED` workspaces accumulate; the cascade for it exists |
 | 1.6's DAO guard test | nothing fails if a new query omits `workspace_id` |

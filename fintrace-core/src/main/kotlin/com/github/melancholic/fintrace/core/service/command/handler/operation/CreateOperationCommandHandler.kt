@@ -8,6 +8,7 @@ import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreate
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
 import com.github.melancholic.fintrace.core.security.IdentityProvider
 import com.github.melancholic.fintrace.core.service.WorkspaceService
+import com.github.melancholic.fintrace.core.service.projection.ProjectionApplier
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import com.github.melancholic.fintrace.core.util.UUIDGenerator
 import com.github.melancholic.fintrace.core.validation.OperationValidationService
@@ -20,7 +21,7 @@ import kotlin.reflect.KClass
 class CreateOperationCommandHandler(
     private val timestampProvider: TimestampProvider,
     private val uuidGenerator: UUIDGenerator,
-    private val operationProjectionDAO: OperationProjectionDAO,
+    private val projectionApplier: ProjectionApplier,
     private val validationService: OperationValidationService,
     eventsDAO: EventsDAO,
     ) : AbstractOperationCommandHandler<CreateOperationCommand, UUID, OperationCreated>(eventsDAO) {
@@ -29,7 +30,8 @@ class CreateOperationCommandHandler(
     override fun handle(command: CreateOperationCommand): UUID {
         validationService.validate(command)
         val event = registerEvent(command)
-        return operationProjectionDAO.createOrUpdate((event.payload as OperationCreated).asProjection())
+        projectionApplier.apply(event.payload.projectionChange())
+        return event.entityId
     }
 
     override fun buildEventPayload(command: CreateOperationCommand): OperationCreated {

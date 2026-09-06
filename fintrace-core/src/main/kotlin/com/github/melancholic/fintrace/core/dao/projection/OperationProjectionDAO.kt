@@ -12,6 +12,7 @@ interface OperationProjectionDAO {
     fun getById(workspaceId: UUID, operationId: UUID): OperationProjection
     fun removeAll(workspaceId: UUID)
     fun remove(workspaceId: UUID, id: UUID)
+    fun remove(workspaceId: UUID, ids: Set<UUID>)
     fun exists(workspaceId: UUID, operationId: UUID): Boolean
 }
 
@@ -43,7 +44,11 @@ class OperationProjectionDAOImpl(
     }
 
     override fun remove(workspaceId: UUID, id: UUID) {
-        jdbc.sql(DELETE_BY_ID_AND_WORKSPACE).param("workspaceId", workspaceId).param("id", id).update()
+        remove(workspaceId, setOf(id))
+    }
+
+    override fun remove(workspaceId: UUID, ids: Set<UUID>) {
+        jdbc.sql(DELETE_BY_IDS_AND_WORKSPACE).param("workspaceId", workspaceId).param("ids", ids).update()
     }
 
     override fun exists(workspaceId: UUID, operationId: UUID): Boolean {
@@ -77,8 +82,8 @@ class OperationProjectionDAOImpl(
             DELETE from t_operations WHERE workspace_id = :workspaceId
         """
 
-        const val DELETE_BY_ID_AND_WORKSPACE = """
-            DELETE from t_operations WHERE workspace_id = :workspaceId AND id = :id
+        const val DELETE_BY_IDS_AND_WORKSPACE = """
+            DELETE from t_operations WHERE workspace_id = :workspaceId AND id IN (:ids)
         """
     }
 }

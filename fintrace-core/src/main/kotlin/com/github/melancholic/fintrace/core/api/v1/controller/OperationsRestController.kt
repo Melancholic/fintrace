@@ -28,8 +28,7 @@ import java.util.*
 class OperationsRestController(
     private val commandFacade: CommandFacade,
     private val projectionFacade: ProjectionFacade,
-    private val mapper: OperationMapper,
-    private val timestampProvider: TimestampProvider,
+    private val mapper: OperationMapper
 ) {
 
     @Operation(summary = "Record an operation")
@@ -118,8 +117,7 @@ class OperationsRestController(
         commandFacade.processCommand(
             CancelOperationCommand(
                 workspaceId = workspaceId,
-                operationId = operationId,
-                occurredAt = timestampProvider.now()
+                operationId = operationId
             )
         )
 

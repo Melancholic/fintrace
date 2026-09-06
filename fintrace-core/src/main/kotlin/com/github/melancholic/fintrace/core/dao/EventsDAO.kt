@@ -5,6 +5,7 @@ import com.github.melancholic.fintrace.core.domain.event.EntityType
 import com.github.melancholic.fintrace.core.domain.event.Event
 import com.github.melancholic.fintrace.core.domain.event.EventType
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
+import com.github.melancholic.fintrace.core.domain.event.payload.TemporalEventPayload
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.ObjectMapper
@@ -41,7 +42,7 @@ class EventsDAOImpl(
             .param("aggregateId", payload.id)
             .param("eventType", eventType.name)
             .param("payload", mapper.writeValueAsString(payload))
-            .param("occurredAt", payload.occurredAt)
+            .param("occurredAt", if (payload is TemporalEventPayload) payload.occurredAt else payload.recordedAt)
             .param("recordedAt", payload.recordedAt)
             .query(Long::class.java)
             .single()
@@ -53,7 +54,7 @@ class EventsDAOImpl(
             entityId = payload.id,
             eventType = eventType,
             payload = payload,
-            occurredAt = payload.occurredAt,
+            occurredAt = if (payload is TemporalEventPayload) payload.occurredAt else payload.recordedAt,
             recordedAt = payload.recordedAt,
         )
     }

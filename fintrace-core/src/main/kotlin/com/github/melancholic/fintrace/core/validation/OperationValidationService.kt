@@ -29,11 +29,10 @@ class OperationValidationServiceImpl(
 
     override fun validate(operation: CancelOperationCommand) {
         checkExist(operation)
-        checkOccurredAt(operation)
     }
 
 
-    private fun checkOccurredAt(operation: OperationCommand<*>) {
+    private fun checkOccurredAt(operation: TemporalCommand<*>) {
         if (timestampProvider.now().isBefore(operation.occurredAt)) {
             throw ValidationError("`occuredAt` has an incorrect value")
         }

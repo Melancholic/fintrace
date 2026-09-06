@@ -36,6 +36,7 @@ class OperationValidationServiceTest {
 		override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection = unsupported()
 		override fun removeAll(workspaceId: UUID): Unit = unsupported()
 		override fun remove(workspaceId: UUID, id: UUID): Unit = unsupported()
+		override fun remove(workspaceId: UUID, ids: Set<UUID>): Unit = unsupported()
 
 		private fun unsupported(): Nothing =
 			throw UnsupportedOperationException("validation reads existence only")
@@ -136,8 +137,8 @@ class OperationValidationServiceTest {
 		workspaceId = workspaceId, operationId = OPERATION, occurredAt = occurredAt, amount = AMOUNT,
 	)
 
-	private fun cancel(workspaceId: UUID = WORKSPACE, occurredAt: LocalDateTime = OCCURRED_AT) =
-		CancelOperationCommand(workspaceId = workspaceId, operationId = OPERATION, occurredAt = occurredAt)
+	private fun cancel(workspaceId: UUID = WORKSPACE) =
+		CancelOperationCommand(workspaceId = workspaceId, operationId = OPERATION)
 
 	private companion object {
 		val WORKSPACE: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")

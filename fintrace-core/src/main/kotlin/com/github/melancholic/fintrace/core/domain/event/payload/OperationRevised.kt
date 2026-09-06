@@ -1,10 +1,23 @@
 package com.github.melancholic.fintrace.core.domain.event.payload
 
+import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
 
-sealed interface OperationRevised : BalanceOperationEventPayload
+sealed interface OperationRevised : BalanceOperationEventPayload {
+    override fun projectionChange(): ProjectionChange = ProjectionChange.Upsert(listOf(
+            OperationProjection(
+                id = id,
+                workspaceId = workspaceId,
+                amount = amount,
+                occurredAt = occurredAt,
+                recordedAt = recordedAt,
+            )
+        )
+    )
+}
 
 /**
  * WARNING: Shouldn't be changed ever. 

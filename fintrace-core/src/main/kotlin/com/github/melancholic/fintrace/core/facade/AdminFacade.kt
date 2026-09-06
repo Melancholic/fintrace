@@ -1,9 +1,7 @@
 package com.github.melancholic.fintrace.core.facade
 
 import com.github.melancholic.fintrace.core.dao.EventsDAO
-import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
-import com.github.melancholic.fintrace.core.domain.projection.DeleteOperationProjection
-import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.service.projection.ProjectionApplier
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -15,20 +13,13 @@ interface AdminFacade {
 @Service
 class AdminFacadeImpl(
     private val eventsDAO: EventsDAO,
-    private val operationProjectionDAO: OperationProjectionDAO
+    private val projectionApplier: ProjectionApplier
 ) : AdminFacade {
 
     @Transactional
     override fun replayWorkspace(workspaceId: UUID) {
-        operationProjectionDAO.removeAll(workspaceId)
-        val events = eventsDAO.loadAll(workspaceId)
-        events.map { it.payload.asProjection() }
-            .forEach {
-                when (it) {
-                    is OperationProjection -> operationProjectionDAO.createOrUpdate(it)
-                    is DeleteOperationProjection -> operationProjectionDAO.remove(it.workspaceId, it.id)
-                }
-            }
+        projectionApplier.clear(workspaceId)
+        eventsDAO.loadAll(workspaceId).forEach { projectionApplier.apply(it.payload.projectionChange()) }
     }
 
 }

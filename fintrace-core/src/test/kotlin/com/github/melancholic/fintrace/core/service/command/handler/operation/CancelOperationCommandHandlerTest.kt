@@ -5,7 +5,7 @@ import com.github.melancholic.fintrace.core.domain.event.EntityType
 import com.github.melancholic.fintrace.core.domain.event.EventType
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCanceledV1
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
-import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.OCCURRED_AT
+import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.OPERATION
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.RECORDED_AT
 import com.github.melancholic.fintrace.core.service.command.handler.operation.HandlerFixtures.WORKSPACE
@@ -18,12 +18,12 @@ import kotlin.test.assertTrue
 class CancelOperationCommandHandlerTest {
 
 	private val events = RecordingEventsDAO()
-	private val projections = RecordingProjectionDAO()
+	private val projections = RecordingProjectionApplier()
 	private val validation = RecordingValidation()
 
 	private fun handler(validation: RecordingValidation = this.validation) = CancelOperationCommandHandler(
 		timestampProvider = FixedTimestampProvider(RECORDED_AT),
-		operationProjectionDAO = projections,
+		projectionApplier = projections,
 		validationService = validation,
 		eventsDAO = events,
 	)
@@ -33,8 +33,11 @@ class CancelOperationCommandHandlerTest {
 		handler().handle(command())
 
 		assertEquals(1, events.registered.size)
-		assertEquals(listOf(WORKSPACE to OPERATION), projections.removed)
-		assertTrue(projections.upserted.isEmpty(), "a cancellation writes no row")
+		val removal = projections.removals.single()
+		assertEquals(ProjectionTarget.OPERATION, removal.target)
+		assertEquals(WORKSPACE, removal.workspaceId)
+		assertEquals(setOf(OPERATION), removal.ids)
+		assertTrue(projections.upsertedRows.isEmpty(), "a cancellation writes no row")
 	}
 
 	@Test
@@ -67,7 +70,9 @@ class CancelOperationCommandHandlerTest {
 		handler().handle(command())
 
 		val event = events.registered.single()
-		assertEquals(listOf(event.workspaceId to event.entityId), projections.removed)
+		val removal = projections.removals.single()
+		assertEquals(event.workspaceId, removal.workspaceId)
+		assertEquals(setOf(event.entityId), removal.ids)
 	}
 
 	@Test
@@ -80,10 +85,10 @@ class CancelOperationCommandHandlerTest {
 		// log gains nothing.
 		assertEquals(1, rejecting.calls)
 		assertTrue(events.registered.isEmpty())
-		assertTrue(projections.removed.isEmpty())
+		assertTrue(projections.applied.isEmpty())
 	}
 
 	private fun command() = CancelOperationCommand(
-		workspaceId = WORKSPACE, operationId = OPERATION, occurredAt = OCCURRED_AT,
+		workspaceId = WORKSPACE, operationId = OPERATION,
 	)
 }

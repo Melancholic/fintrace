@@ -5,6 +5,7 @@ import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDA
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationRevised
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationRevisedV1
+import com.github.melancholic.fintrace.core.service.projection.ProjectionApplier
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import com.github.melancholic.fintrace.core.validation.OperationValidationService
 import org.springframework.stereotype.Component
@@ -13,7 +14,7 @@ import kotlin.reflect.KClass
 @Component
 class ReviseOperationCommandHandler(
     private val timestampProvider: TimestampProvider,
-    private val operationProjectionDAO: OperationProjectionDAO,
+    private val projectionApplier: ProjectionApplier,
     private val validationService: OperationValidationService,
     eventsDAO: EventsDAO,
 ) : AbstractOperationCommandHandler<ReviseOperationCommand, Unit, OperationRevised>(
@@ -24,7 +25,7 @@ class ReviseOperationCommandHandler(
     override fun handle(command: ReviseOperationCommand) {
         validationService.validate(command)
         val event = registerEvent(command)
-        operationProjectionDAO.createOrUpdate((event.payload as OperationRevised).asProjection())
+        projectionApplier.apply(event.payload.projectionChange())
     }
 
     override fun buildEventPayload(command: ReviseOperationCommand): OperationRevised {
