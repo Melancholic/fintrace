@@ -4,9 +4,7 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
-import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
-import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
-import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
+import com.github.melancholic.fintrace.core.domain.command.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -173,6 +171,56 @@ class AdminFacadeReplayTest(
 	}
 
 	@Test
+	fun `rebuilds two aggregates at once`() {
+		repeat(2) { create() }
+		createAccount(name = "cash")
+		createAccount(name = "savings")
+		val operationsBefore = operations(workspace)
+		val accountsBefore = accounts(workspace)
+
+		// Until now nothing proved the replay path generalises: one table can be rebuilt by a
+		// handler that happens to be right, two cannot.
+		jdbc.sql("DELETE FROM t_operations").update()
+		jdbc.sql("DELETE FROM t_accounts").update()
+		adminFacade.replayWorkspace(workspace)
+
+		assertEquals(operationsBefore, operations(workspace))
+		assertEquals(accountsBefore, accounts(workspace))
+		assertEquals(2, accountsBefore.size, "sanity: the snapshot must not be empty")
+	}
+
+	@Test
+	fun `replays each aggregate through its own projection`() {
+		val account = createAccount(name = "cash")
+		create()
+
+		adminFacade.replayWorkspace(workspace)
+
+		// A payload registered under the wrong discriminator would rebuild as the other
+		// aggregate, leaving one table short and the other with a row it cannot map.
+		assertEquals(1, accounts(workspace).size)
+		assertEquals(1, operations(workspace).size)
+		assertEquals(account, accounts(workspace).single().id)
+	}
+
+	@Test
+	fun `replays an account's revisions onto one row`() {
+		val account = createAccount(name = "before", currency = "CZK")
+		commandFacade.processCommand(ReviseAccountCommand(workspace, account, "after", icon = "new"))
+		commandFacade.processCommand(SetAccountArchivedCommand(workspace, account, archived = true))
+		val before = accounts(workspace)
+
+		jdbc.sql("DELETE FROM t_accounts").update()
+		adminFacade.replayWorkspace(workspace)
+
+		assertEquals(before, accounts(workspace))
+		val row = accounts(workspace).single()
+		assertEquals("after", row.name)
+		assertEquals("CZK", row.currency, "the immutable currency survives three events")
+		assertTrue(row.archived)
+	}
+
+	@Test
 	fun `preserves amount and timestamps exactly`() {
 		create(amount = "-1234.5600", occurredAt = BACK_DATED)
 
@@ -191,6 +239,32 @@ class AdminFacadeReplayTest(
 	) = commandFacade.processCommand(
 		CreateOperationCommand(workspaceId, occurredAt, BigDecimal(amount))
 	)
+
+	private fun createAccount(
+		name: String = "account",
+		currency: String = "EUR",
+	): UUID = commandFacade.processCommand(CreateAccountCommand(workspace, name, currency, icon = null)).id
+
+	private fun accounts(workspaceId: UUID): List<AccountRow> = jdbc
+		.sql(
+			"""
+			SELECT id, workspace_id, name, currency, icon, archived, recorded_at
+			FROM t_accounts WHERE workspace_id = :ws ORDER BY id
+			"""
+		)
+		.param("ws", workspaceId)
+		.query { rs, _ ->
+			AccountRow(
+				id = rs.getObject("id", UUID::class.java),
+				workspaceId = rs.getObject("workspace_id", UUID::class.java),
+				name = rs.getString("name"),
+				currency = rs.getString("currency").trim(),
+				icon = rs.getString("icon"),
+				archived = rs.getBoolean("archived"),
+				recordedAt = rs.getObject("recorded_at", LocalDateTime::class.java),
+			)
+		}
+		.list()
 
 	private fun operations(workspaceId: UUID): List<Row> = jdbc
 		.sql(
@@ -213,6 +287,16 @@ class AdminFacadeReplayTest(
 
 	private fun eventIds(): List<Long> =
 		jdbc.sql("SELECT id FROM t_events ORDER BY id").query(Long::class.java).list().filterNotNull()
+
+	private data class AccountRow(
+		val id: UUID,
+		val workspaceId: UUID,
+		val name: String,
+		val currency: String,
+		val icon: String?,
+		val archived: Boolean,
+		val recordedAt: LocalDateTime,
+	)
 
 	private data class Row(
 		val id: UUID,

@@ -11,7 +11,6 @@ import com.github.melancholic.fintrace.core.domain.command.ReviseOperationComman
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.facade.CommandFacade
 import com.github.melancholic.fintrace.core.facade.ProjectionFacade
-import com.github.melancholic.fintrace.core.util.TimestampProvider
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
@@ -72,7 +71,7 @@ class OperationsRestController(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("operationId") operationId: UUID,
     ): ResponseEntity<OperationResponse> {
-        val projection: OperationProjection = projectionFacade.getOperationProjection(workspaceId, operationId)
+        val projection: OperationProjection = projectionFacade.getOperation(workspaceId, operationId)
 
         return ResponseEntity
             .ok(mapper.toResponse(projection))

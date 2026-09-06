@@ -1,13 +1,14 @@
 package com.github.melancholic.fintrace.core.domain.projection
 
-import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
 
-data class OperationProjection(
+data class AccountProjection(
     override val id: UUID,
     override val workspaceId: UUID,
-    val amount: BigDecimal,
-    override val occurredAt: LocalDateTime,
+    val name: String,
+    val currency: String,
+    val archived: Boolean,
+    val icon: String?,
     override val recordedAt: LocalDateTime
-) : TemporalProjection
+) : Projection

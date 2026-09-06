@@ -40,8 +40,12 @@ M5. `/admin/**` is gated on the `ADMIN` role.
 M5 replaces its implementation, and nothing else may read the security context.
 
 The command pipeline is the shape every later aggregate copies: a sealed `Command<R>` hierarchy
-(create returns `UUID`, revise/cancel return `Unit`), routed by `CommandDispatcher` to a handler
-that validates, appends the event, then writes the projection. `CommandFacade` owns the
+routed by `CommandDispatcher` to a handler that validates, appends the event, then writes the
+projection. **A command returns the state it produced** — the handler already holds it, having
+built the payload — so create and revise return the projection row and only cancel returns `Unit`.
+That is what lets a mutation answer with the resulting resource without a second read. Accounts
+follow this; operations and workspaces are still on the older shape (create returns `UUID`, revise
+returns `Unit`) and are to be converted. `CommandFacade` owns the
 transaction boundary, resolves the caller once, and guards the workspace's status before
 dispatching.
 

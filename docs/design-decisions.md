@@ -792,6 +792,18 @@ Account **type** (cash / card / savings) is not modelled — no need identified.
 
 Balance is not a stored field (§4.6): it is computed from the nearest preceding anchor.
 
+**Currency is immutable after creation.** It is the unit of every number already recorded against
+the account, and changing it converts nothing: operations keep their amounts, anchors are absolute
+values in the account's currency (§4.6), and a cross-currency transfer's two legs — each in its
+own account's currency (§4.5) — would stop corresponding. Nothing would error; the history would
+quietly mean something else. A full-body `PUT` makes that worse, since a client echoing a stale
+view could change the currency without anyone choosing to.
+
+Rejected alternatives, should the need appear: mutable while the account is still empty (covers
+the realistic case — created with the wrong currency and noticed immediately), or a dedicated
+action that states amounts are not converted. Editing it as an ordinary field is the one shape to
+avoid.
+
 #### Archiving
 
 **Decision: accounts are archived, never deleted.** An archived account disappears from
@@ -1462,6 +1474,18 @@ revisions, commands or event semantics.
 A command-style surface (`POST /operations/{id}/revisions`) was rejected: it is the same
 operation under a less familiar name, and it would make the UI pay for an implementation
 choice made inside Core.
+
+**Every mutation answers with the resulting state; only a removal answers `204`.** Create returns
+`201` with the representation and a `Location` header, revise and the state-changing actions
+return `200` with it. The client then needs no second request to render what it just did — and
+where a resource is optimistically locked (§10.0.1) the response carries the version needed to
+chain the next write. The alternative, `204` everywhere, was rejected for the same reason: it
+makes every write cost two round trips, and it leaves the caller guessing at server-set fields
+such as `recorded_at` or a normalised value.
+
+This is why a command returns what it produced rather than `Unit`: the handler has already built
+the payload, so returning the row costs nothing and keeps the response provably equal to what was
+written.
 
 ### 10.0.1 Concurrency: optimistic locking on workspaces
 

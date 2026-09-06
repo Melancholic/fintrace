@@ -1,6 +1,6 @@
 # fintrace — current status
 
-**Last updated:** 2026-09-06 (late) · **Milestone:** M1 (in progress) · **Suite:** 155 tests green
+**Last updated:** 2026-09-07 · **Milestone:** M1 (in progress) · **Suite:** 199 tests green
 (`cd fintrace-core && ./gradlew clean test`)
 
 > **This file is regenerated, not appended to.** It records where development stands right now;
@@ -15,13 +15,14 @@
 **M0 complete** (0.1–0.13). **M1: 6 of 27 task items**, and both shapes every later aggregate
 copies — the workspace lifecycle and the operation aggregate — are finished.
 
-| Area | State |
-|---|---|
-| Operations | create / revise / cancel end to end: command → validation → event → projection, one transaction, plus REST and replay |
-| Workspaces | CRUD, four-status lifecycle, ownership, optimistic locking, seven documented endpoints |
-| Identity | `t_users` as a projection of the IdP; `IdentityProvider` resolves the caller by subject |
-| Accounts, categories, transfers, anchors | not started |
-| Importer, BFF, web | later milestones |
+| Area                           | State                                                                                                                 |
+|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| Operations                     | create / revise / cancel end to end: command → validation → event → projection, one transaction, plus REST and replay |
+| Workspaces                     | CRUD, four-status lifecycle, ownership, optimistic locking, seven documented endpoints                                |
+| Identity                       | `t_users` as a projection of the IdP; `IdentityProvider` resolves the caller by subject                               |
+| Accounts                       | CRUD, archive/unarchive, validation, six documented endpoints                                                         |
+| Categories, transfers, anchors | not started                                                                                                           |
+| Importer, BFF, web             | later milestones                                                                                                      |
 
 ### Done in M1
 
@@ -32,6 +33,8 @@ copies — the workspace lifecycle and the operation aggregate — are finished.
 - **1.4** every transition, including implicit `NEW → ACTIVE` at the first write;
   `requireWritable` guards the command path, `requireReadable` the read path
 - **1.5** soft delete, guarded by the caller's `version`
+- **1.7, 1.8, 1.10** accounts: migration, projection, create / rename / archive / unarchive, CRUD
+  endpoints. 1.9 (opening balance as the first anchor) waits for anchors
 - **1.17** operation revise / cancel, with the cancelled row removed rather than flagged
 - **Step A** — the two shapes deferred from step 1 of `plans/M1.md`, done ahead of accounts:
   `Projection` / `TemporalProjection` and `Command` / `TemporalCommand` split so a non-temporal
@@ -50,7 +53,15 @@ counts the service turns into 404 / 409 / 500). Accounts and categories should c
 
 ## What is next
 
-**Accounts (1.7, 1.8, 1.10) — unblocked.** Step A is done, so the second event-sourced aggregate
+**Categories (1.11–1.15)** — the first aggregate with structural invariants: same-branch moves,
+no move into a descendant, `Others` stays a leaf, system categories immutable, plus the recursive
+descendants query M3 reuses (1.12). Then operations' full field set (1.16), transfers, anchors.
+
+**Carried over:** convert operations and workspaces to the "a mutation returns its resulting
+state" convention accounts now follow (§10.0), and record the `DELETE /accounts/{id}/archive`
+deviation from §10.1 in the design record.
+
+*Previously:* **Accounts (1.7, 1.8, 1.10) — unblocked.** Step A is done, so the second event-sourced aggregate
 can be added without carrying a business date it has no use for, and `ProjectionApplier`'s
 exhaustive `when` will refuse to compile until `AccountProjection` is wired into it. `V0006`, payloads, create / rename / archive / unarchive, `DELETE`
 archives, and the rebuild-equality test extended to a second aggregate — the first real proof the

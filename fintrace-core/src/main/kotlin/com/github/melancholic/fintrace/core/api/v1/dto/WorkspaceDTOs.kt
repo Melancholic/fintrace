@@ -1,9 +1,9 @@
 package com.github.melancholic.fintrace.core.api.v1.dto
 
 import com.github.melancholic.fintrace.core.domain.entity.WorkspaceStatus
-import com.github.melancholic.fintrace.core.validation.WorkspaceValidationServiceImpl.Companion.CURRENCY_PATTERN
-import com.github.melancholic.fintrace.core.validation.WorkspaceValidationServiceImpl.Companion.MAX_NAME_LENGTH
-import com.github.melancholic.fintrace.core.validation.WorkspaceValidationServiceImpl.Companion.WORKSPACE_NAME_PATTERN
+import com.github.melancholic.fintrace.core.validation.ValidationConstants.CURRENCY_PATTERN
+import com.github.melancholic.fintrace.core.validation.ValidationConstants.MAX_NAME_LENGTH
+import com.github.melancholic.fintrace.core.validation.ValidationConstants.WORKSPACE_NAME_PATTERN
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Pattern

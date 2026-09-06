@@ -79,6 +79,17 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
 	}
 
 	@Test
+	fun `documents every account endpoint`() {
+		mvc.perform(get("/v3/api-docs"))
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts'].post.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}'].put.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/archive'].post.summary").exists())
+			.andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/archive'].delete.summary").exists())
+	}
+
+	@Test
 	fun `serves the Swagger UI anonymously`() {
 		mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk)
 	}

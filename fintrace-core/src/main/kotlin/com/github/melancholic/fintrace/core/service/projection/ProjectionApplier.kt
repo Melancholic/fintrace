@@ -1,7 +1,6 @@
 package com.github.melancholic.fintrace.core.service.projection
 
-import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
-import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.dao.projection.ProjectionDAORegistry
 import com.github.melancholic.fintrace.core.domain.projection.Projection
 import org.springframework.stereotype.Service
 import java.util.*
@@ -13,27 +12,25 @@ interface ProjectionApplier {
 
 @Service
 class ProjectionApplierImpl(
-    private val operationsDAO: OperationProjectionDAO
+    private val projectionDAORegistry: ProjectionDAORegistry
 ) : ProjectionApplier {
+
     override fun apply(change: ProjectionChange) {
-        return when (change) {
+        when (change) {
             is ProjectionChange.Upsert -> change.rows.forEach { upsert(it) }
             is ProjectionChange.Remove -> remove(change)
         }
     }
 
     override fun clear(workspaceId: UUID) {
-        operationsDAO.removeAll(workspaceId)
+        projectionDAORegistry.asList().forEach { it.removeAll(workspaceId) }
     }
 
-    private fun upsert(row: Projection) = when (row) {
-        is OperationProjection -> operationsDAO.createOrUpdate(row)
+    private fun <P : Projection> upsert(row: P) {
+        projectionDAORegistry.resolve(row.javaClass).createOrUpdate(row)
     }
 
-    private fun remove(change: ProjectionChange.Remove) = when (change.target) {
-        ProjectionTarget.OPERATION -> operationsDAO.remove(change.workspaceId, change.ids)
-        ProjectionTarget.ACCOUNT -> TODO()
-        ProjectionTarget.CATEGORY -> TODO()
-        ProjectionTarget.ANCHOR -> TODO()
+    private fun remove(change: ProjectionChange.Remove) {
+        projectionDAORegistry.resolve(change.target).remove(change.workspaceId, change.ids)
     }
 }

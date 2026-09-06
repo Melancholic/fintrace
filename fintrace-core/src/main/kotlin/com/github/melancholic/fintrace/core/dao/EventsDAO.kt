@@ -20,6 +20,8 @@ interface EventsDAO {
     ): Event
 
     fun loadAll(workspaceId: UUID): List<Event>
+
+    fun latestPayload(workspaceId: UUID, aggregateId: UUID): EventPayload?
 }
 
 @Repository
@@ -59,6 +61,15 @@ class EventsDAOImpl(
         )
     }
 
+    override fun latestPayload(workspaceId: UUID, aggregateId: UUID): EventPayload? = jdbc
+        .sql(SELECT_LATEST_BY_AGGREGATE)
+        .param("workspaceId", workspaceId)
+        .param("aggregateId", aggregateId)
+        .query(String::class.java)
+        .optional()
+        .map { mapper.readValue(it, EventPayload::class.java) }
+        .orElse(null)
+
     override fun loadAll(workspaceId: UUID): List<Event> = jdbc.sql(SELECT_BY_WORKSPACE)
         .param("workspaceId", workspaceId)
         .query(eventRowMapper)
@@ -71,6 +82,13 @@ class EventsDAOImpl(
             VALUES (:workspaceId, :aggregateType, :aggregateId, :eventType,
                     CAST(:payload AS jsonb), :occurredAt, :recordedAt)
             RETURNING id
+        """
+
+        const val SELECT_LATEST_BY_AGGREGATE = """
+            SELECT payload FROM t_events
+            WHERE workspace_id = :workspaceId AND aggregate_id = :aggregateId
+            ORDER BY id DESC
+            LIMIT 1
         """
 
         const val SELECT_BY_WORKSPACE = """

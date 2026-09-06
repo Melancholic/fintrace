@@ -8,8 +8,8 @@ import com.github.melancholic.fintrace.core.domain.entity.WorkspaceStatus
 import com.github.melancholic.fintrace.core.exception.ActionConflictException
 import com.github.melancholic.fintrace.core.exception.ApplicationException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
-import com.github.melancholic.fintrace.core.validation.WorkspaceValidationService
 import com.github.melancholic.fintrace.core.exception.OperationNotAllowedException
+import com.github.melancholic.fintrace.core.validation.WorkspaceValidationService
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -151,7 +151,7 @@ class WorkspaceServiceImpl(
     companion object {
         val TO_DELETE_STATUSES = setOf(WorkspaceStatus.NEW, WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED)
         val WRITABLE_STATUSES = setOf(WorkspaceStatus.NEW, WorkspaceStatus.ACTIVE)
-        val READABLE_STATUSES = setOf(WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED)
+        val READABLE_STATUSES = setOf(WorkspaceStatus.NEW, WorkspaceStatus.ACTIVE, WorkspaceStatus.ARCHIVED)
         const val STATUS_CONFLICT_MSG = "Couldn't change workspace status due statuses conflict"
     }
 }

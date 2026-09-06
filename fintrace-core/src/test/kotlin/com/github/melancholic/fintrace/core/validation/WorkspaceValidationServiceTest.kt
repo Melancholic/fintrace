@@ -26,7 +26,7 @@ class WorkspaceValidationServiceTest {
 
 	@Test
 	fun `rejects a name longer than the column`() {
-		val tooLong = "a".repeat(WorkspaceValidationServiceImpl.MAX_NAME_LENGTH + 1)
+		val tooLong = "a".repeat(ValidationConstants.MAX_NAME_LENGTH + 1)
 
 		// varchar(60) would truncate silently in some databases; Postgres errors. Either way the
 		// rule belongs here rather than being discovered at the driver.

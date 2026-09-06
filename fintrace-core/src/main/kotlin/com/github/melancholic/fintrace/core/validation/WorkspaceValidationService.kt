@@ -3,8 +3,9 @@ package com.github.melancholic.fintrace.core.validation
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.EditWorkspaceRequest
 import com.github.melancholic.fintrace.core.exception.ValidationError
+import com.github.melancholic.fintrace.core.validation.ValidationConstants.MAX_NAME_LENGTH
+import com.github.melancholic.fintrace.core.validation.ValidationConstants.WORKSPACE_NAME_PATTERN
 import org.springframework.stereotype.Service
-import java.util.*
 
 interface WorkspaceValidationService {
     fun validate(request: CreateWorkspaceRequest)
@@ -40,22 +41,9 @@ class WorkspaceValidationServiceImpl : WorkspaceValidationService {
         }
     }
 
-    private fun checkCurrency(code: String) {
-        if (!CURRENCY_REGEX.matches(code)) {
-            throw ValidationError("Currency must be a three-letter uppercase ISO-4217 code, was '$code'")
-        }
-
-        // JDK-based currency validator
-        runCatching { Currency.getInstance(code) }
-            .onFailure { throw ValidationError("Unknown currency code '$code'") }
-    }
+    private fun checkCurrency(code: String) = CurrencyValidator.requireKnown(code)
 
     companion object {
-        const val MAX_NAME_LENGTH = 30
-        const val WORKSPACE_NAME_PATTERN = "[a-zA-Z0-9][a-zA-Z0-9\\-_\\[\\]()]*"
-        const val CURRENCY_PATTERN = "[A-Z]{3}"
-
         private val NAME_REGEX = Regex(WORKSPACE_NAME_PATTERN)
-        private val CURRENCY_REGEX = Regex(CURRENCY_PATTERN)
     }
 }

@@ -2,7 +2,7 @@ package com.github.melancholic.fintrace.core.domain.event
 
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 
 data class Event(
 	val id: Long,
@@ -17,6 +17,7 @@ data class Event(
 
 enum class EntityType {
 	OPERATION,
+	ACCOUNT,
 }
 
 enum class EventType {

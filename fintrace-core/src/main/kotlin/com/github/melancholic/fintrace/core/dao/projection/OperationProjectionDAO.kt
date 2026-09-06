@@ -2,17 +2,19 @@ package com.github.melancholic.fintrace.core.dao.projection
 
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
+import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import java.util.*
 
 
-interface OperationProjectionDAO {
-    fun createOrUpdate(projection: OperationProjection): UUID
+interface OperationProjectionDAO : ProjectionDAO<OperationProjection> {
+    override fun projectionTarget() = ProjectionTarget.OPERATION
+    override fun supportedClass() = OperationProjection::class.java
+
+    override fun createOrUpdate(projection: OperationProjection): UUID
     fun getById(workspaceId: UUID, operationId: UUID): OperationProjection
-    fun removeAll(workspaceId: UUID)
     fun remove(workspaceId: UUID, id: UUID)
-    fun remove(workspaceId: UUID, ids: Set<UUID>)
     fun exists(workspaceId: UUID, operationId: UUID): Boolean
 }
 
@@ -23,9 +25,11 @@ class OperationProjectionDAOImpl(
 
     override fun createOrUpdate(projection: OperationProjection): UUID {
         return jdbc.sql(INSERT_OR_UPDATE).param("id", projection.id).param("workspaceId", projection.workspaceId)
-            .param("amount", projection.amount).param("occurredAt", projection.occurredAt)
+            .param("amount", projection.amount)
+            .param("occurredAt", projection.occurredAt)
             .param("recordedAt", projection.recordedAt)
-            .query(UUID::class.java
+            .query(
+                UUID::class.java
             ).single()
     }
 
@@ -58,32 +62,35 @@ class OperationProjectionDAOImpl(
     }
 
     private companion object {
+        const val TABLE_NAME = "t_operations"
+
         const val INSERT_OR_UPDATE = """
-            INSERT INTO t_operations (id, workspace_id, amount, occurred_at, recorded_at)
+            INSERT INTO $TABLE_NAME (id, workspace_id, amount, occurred_at, recorded_at)
             VALUES (:id, :workspaceId, :amount, :occurredAt, :recordedAt)
             ON CONFLICT (id) DO UPDATE SET
                 amount      = EXCLUDED.amount,
                 occurred_at = EXCLUDED.occurred_at,
                 recorded_at = EXCLUDED.recorded_at
-            WHERE t_operations.workspace_id = EXCLUDED.workspace_id
+            WHERE $TABLE_NAME.workspace_id = EXCLUDED.workspace_id
             RETURNING id
         """
 
         const val SELECT = """
-            SELECT id, workspace_id, amount, occurred_at, recorded_at from t_operations
+            SELECT id, workspace_id, amount, occurred_at, recorded_at 
+            from $TABLE_NAME
             WHERE workspace_id = :workspaceId AND id = :id
         """
 
         const val CHECK_EXISTS = """
-            SELECT EXISTS(SELECT 1 FROM t_operations WHERE workspace_id = :workspaceId AND id = :id)
+            SELECT EXISTS(SELECT 1 FROM $TABLE_NAME WHERE workspace_id = :workspaceId AND id = :id)
         """
 
         const val DELETE_BY_WORKSPACE = """
-            DELETE from t_operations WHERE workspace_id = :workspaceId
+            DELETE from $TABLE_NAME WHERE workspace_id = :workspaceId
         """
 
         const val DELETE_BY_IDS_AND_WORKSPACE = """
-            DELETE from t_operations WHERE workspace_id = :workspaceId AND id IN (:ids)
+            DELETE from $TABLE_NAME WHERE workspace_id = :workspaceId AND id IN (:ids)
         """
     }
 }

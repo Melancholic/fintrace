@@ -14,14 +14,14 @@ data class CreateOperationCommand(
     override val workspaceId: UUID,
     override val occurredAt: LocalDateTime,
     val amount: BigDecimal,
-) : OperationCommand<UUID>, CreateCommand<UUID>
+) : OperationCommand<UUID>, CreateCommand<UUID>, TemporalCommand<UUID>
 
 data class ReviseOperationCommand(
     override val workspaceId: UUID,
     override val operationId: UUID,
     override val occurredAt: LocalDateTime,
     val amount: BigDecimal,
-) : ExistingOperationCommand<Unit>, ReviseCommand<Unit>
+) : ExistingOperationCommand<Unit>, ReviseCommand<Unit>, TemporalCommand<Unit>
 
 data class CancelOperationCommand(
     override val workspaceId: UUID,

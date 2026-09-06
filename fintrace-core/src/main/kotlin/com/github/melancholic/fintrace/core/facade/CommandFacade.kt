@@ -25,6 +25,7 @@ class CommandFacadeImpl(
         val workspace = workspaceService.requireWritable(userId, command.workspaceId)
         val result = commandDispatcher.dispatch(command)
         if (workspace.status == WorkspaceStatus.NEW) workspaceService.activateWorkspace(userId, command.workspaceId)
-        return result    }
+        return result
+    }
 
 }

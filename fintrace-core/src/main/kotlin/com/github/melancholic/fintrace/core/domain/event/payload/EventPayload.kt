@@ -2,8 +2,6 @@ package com.github.melancholic.fintrace.core.domain.event.payload
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
-import com.github.melancholic.fintrace.core.domain.projection.Projection
-import com.github.melancholic.fintrace.core.domain.projection.TemporalProjection
 import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import java.time.LocalDateTime
 import java.util.*
@@ -22,7 +20,10 @@ import java.util.*
 @JsonSubTypes(
 	JsonSubTypes.Type(value = OperationCreatedV1::class, name = OperationCreatedV1.TYPE),
 	JsonSubTypes.Type(value = OperationRevisedV1::class, name = OperationRevisedV1.TYPE),
-	JsonSubTypes.Type(value = OperationCanceledV1::class, name = OperationCanceledV1.TYPE)
+	JsonSubTypes.Type(value = OperationCanceledV1::class, name = OperationCanceledV1.TYPE),
+
+	JsonSubTypes.Type(value = AccountCreatedV1::class, name = AccountCreatedV1.TYPE),
+	JsonSubTypes.Type(value = AccountRevisedV1::class, name = AccountRevisedV1.TYPE),
 )
 sealed interface EventPayload {
 	val version: Int

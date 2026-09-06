@@ -7,16 +7,17 @@ import java.time.LocalDateTime
 import java.util.*
 
 sealed interface OperationRevised : BalanceOperationEventPayload {
-    override fun projectionChange(): ProjectionChange = ProjectionChange.Upsert(listOf(
-            OperationProjection(
-                id = id,
-                workspaceId = workspaceId,
-                amount = amount,
-                occurredAt = occurredAt,
-                recordedAt = recordedAt,
-            )
-        )
+    override fun projectionChange(): ProjectionChange = ProjectionChange
+        .Upsert(listOf(projection()))
+
+    fun projection(): OperationProjection = OperationProjection(
+        id = id,
+        workspaceId = workspaceId,
+        amount = amount,
+        occurredAt = occurredAt,
+        recordedAt = recordedAt,
     )
+
 }
 
 /**

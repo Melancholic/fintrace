@@ -16,7 +16,7 @@ import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import com.github.melancholic.fintrace.core.validation.OperationValidationService
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 
 /**
  * Fakes shared by the operation handler tests.
@@ -46,6 +46,10 @@ internal class RecordingEventsDAO : EventsDAO {
 	).also { registered += it }
 
 	override fun loadAll(workspaceId: UUID): List<Event> = registered
+
+	override fun latestPayload(workspaceId: UUID, aggregateId: UUID): EventPayload? = registered
+		.lastOrNull { it.workspaceId == workspaceId && it.entityId == aggregateId }
+		?.payload
 }
 
 /** Records the changes a handler applies, without any of the SQL behind them. */
