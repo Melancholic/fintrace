@@ -1,6 +1,5 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
-import com.github.melancholic.fintrace.core.api.v1.dto.CreateUUIDEntityResponse
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.EditWorkspaceRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.WorkspaceResponse
@@ -38,18 +37,18 @@ class WorkspacesRestController(
     @PostMapping
     fun createNewWorkspace(
         @Valid @RequestBody request: CreateWorkspaceRequest
-    ): ResponseEntity<CreateUUIDEntityResponse> {
-        val createdId = workspaceFacade.createWorkspace(request)
+    ): ResponseEntity<WorkspaceResponse> {
+        val workspace: Workspace = workspaceFacade.createWorkspace(request)
 
         val location = MvcUriComponentsBuilder
             .fromController(WorkspacesRestController::class.java)
             .path("/{workspaceId}")
-            .buildAndExpand(createdId)
+            .buildAndExpand(workspace.id)
             .toUri()
 
         return ResponseEntity
             .created(location)
-            .body(CreateUUIDEntityResponse(createdId))
+            .body(mapper.toResponse(workspace))
     }
 
     @Operation(summary = "Fetch a workspace")

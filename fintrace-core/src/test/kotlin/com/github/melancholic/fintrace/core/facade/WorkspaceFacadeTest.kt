@@ -19,12 +19,8 @@ import org.springframework.data.domain.Sort
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.context.support.WithMockUser
 import java.time.LocalDateTime
-import java.util.UUID
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import java.util.*
+import kotlin.test.*
 
 /**
  * The workspace lifecycle (§4.1.1) at the layer that owns it. The workspace is not event-sourced
@@ -52,9 +48,8 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `creates a workspace owned by the caller, in NEW`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
-
-		val created = facade.getWorkspace(id)
+		// The call answers with the workspace it created, so nothing here needs a second read.
+		val created = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
 		assertEquals("budget", created.name)
 		assertEquals("EUR", created.defaultCurrency)
 		assertEquals(WorkspaceStatus.NEW, created.status, "import is permitted only from NEW (§4.2)")
@@ -65,7 +60,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `never takes the owner from the caller's input`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR")).id
 
 		// The owner is resolved server-side from the security context; there is no request field
 		// that could carry a different one.
@@ -88,7 +83,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `lists only the caller's workspaces`() {
-		val mine = facade.createWorkspace(CreateWorkspaceRequest("mine", "EUR"))
+		val mine = facade.createWorkspace(CreateWorkspaceRequest("mine", "EUR")).id
 		workspaceDAO.create(otherUser(), CreateWorkspaceRequest("theirs", "USD"))
 
 		assertEquals(listOf(mine), facade.getWorkspaces(page()).map { it.id })
@@ -96,8 +91,8 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `sorts the listing by the requested column`() {
-		val first = facade.createWorkspace(CreateWorkspaceRequest("alpha", "EUR"))
-		val second = facade.createWorkspace(CreateWorkspaceRequest("beta", "EUR"))
+		val first = facade.createWorkspace(CreateWorkspaceRequest("alpha", "EUR")).id
+		val second = facade.createWorkspace(CreateWorkspaceRequest("beta", "EUR")).id
 
 		val ascending = facade.getWorkspaces(page(Sort.by("name"))).map { it.id }
 		assertEquals(listOf(first, second), ascending)
@@ -106,7 +101,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `pages the listing`() {
-		repeat(3) { facade.createWorkspace(CreateWorkspaceRequest("ws-$it", "EUR")) }
+		repeat(3) { facade.createWorkspace(CreateWorkspaceRequest("ws-$it", "EUR")).id }
 
 		assertEquals(2, facade.getWorkspaces(PageRequest.of(0, 2, Sort.by("name"))).size)
 		assertEquals(1, facade.getWorkspaces(PageRequest.of(1, 2, Sort.by("name"))).size)
@@ -114,7 +109,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `renames a workspace and bumps its version`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("before", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("before", "EUR")).id
 
 		facade.editWorkspace(id, EditWorkspaceRequest(version = 0, workspaceName = "after", defaultCurrency = null))
 
@@ -126,7 +121,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `changes the default currency alone`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR")).id
 
 		facade.editWorkspace(id, EditWorkspaceRequest(version = 0, workspaceName = null, defaultCurrency = "USD"))
 
@@ -136,7 +131,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `refuses an edit carrying a stale version`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR")).id
 		facade.editWorkspace(id, EditWorkspaceRequest(version = 0, workspaceName = "first", defaultCurrency = null))
 
 		// The client's view is one version behind: someone else has written since it read.
@@ -173,7 +168,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `refuses to archive a workspace that is still NEW`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("budget", "EUR")).id
 
 		// A NEW workspace is empty by definition, so there is nothing to keep for reference —
 		// and unarchiving would have to guess which status to return to.
@@ -204,7 +199,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `deletes a NEW workspace`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("abandoned", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("abandoned", "EUR")).id
 
 		facade.deleteWorkspace(id, versionOf(id))
 
@@ -223,7 +218,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `a deleted workspace is invisible to reads`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR")).id
 
 		facade.deleteWorkspace(id, versionOf(id))
 
@@ -234,7 +229,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `stamps deleted_at exactly when deleting`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR")).id
 		assertNull(row(id).deletedAt)
 
 		facade.deleteWorkspace(id, versionOf(id))
@@ -246,7 +241,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `refuses to delete an already deleted workspace`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR")).id
 		facade.deleteWorkspace(id, versionOf(id))
 
 		// A deleted workspace is invisible, so the second attempt cannot even find it.
@@ -277,7 +272,7 @@ class WorkspaceFacadeTest(
 
 	@Test
 	fun `refuses to edit a deleted workspace`() {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("gone", "EUR")).id
 		facade.deleteWorkspace(id, versionOf(id))
 
 		assertFailsWith<NotFoundEntityException> {
@@ -307,7 +302,7 @@ class WorkspaceFacadeTest(
 	 * reachable by setting the status directly.
 	 */
 	private fun activeWorkspace(): UUID {
-		val id = facade.createWorkspace(CreateWorkspaceRequest("active-ws", "EUR"))
+		val id = facade.createWorkspace(CreateWorkspaceRequest("active-ws", "EUR")).id
 		jdbc.sql("UPDATE t_workspaces SET status = 'ACTIVE' WHERE id = :id").param("id", id).update()
 		return id
 	}

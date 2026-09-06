@@ -28,7 +28,7 @@ explicitly, `@Transactional(MANDATORY)` so it cannot be called from outside a tr
 (SQL, returns row counts rather than asserting). Validation services live beside the services and
 hold rules that must also hold for the CLI and the importer.
 
-Verify with `./gradlew clean test` (155 tests). Prefer `clean` — incremental builds have twice
+Verify with `./gradlew clean test` (199 tests). Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
 **Workspace ownership is enforced now** — `owner_id`, plus `requireWritable` on the command path
@@ -43,9 +43,8 @@ The command pipeline is the shape every later aggregate copies: a sealed `Comman
 routed by `CommandDispatcher` to a handler that validates, appends the event, then writes the
 projection. **A command returns the state it produced** — the handler already holds it, having
 built the payload — so create and revise return the projection row and only cancel returns `Unit`.
-That is what lets a mutation answer with the resulting resource without a second read. Accounts
-follow this; operations and workspaces are still on the older shape (create returns `UUID`, revise
-returns `Unit`) and are to be converted. `CommandFacade` owns the
+That is what lets a mutation answer with the resulting resource without a second read (§10.0),
+and it holds for all three areas — workspaces, accounts and operations. `CommandFacade` owns the
 transaction boundary, resolves the caller once, and guards the workspace's status before
 dispatching.
 

@@ -236,9 +236,9 @@ class AdminFacadeReplayTest(
 		workspaceId: UUID = workspace,
 		amount: String = "100.0000",
 		occurredAt: LocalDateTime = OCCURRED_AT,
-	) = commandFacade.processCommand(
+    ): UUID = commandFacade.processCommand(
 		CreateOperationCommand(workspaceId, occurredAt, BigDecimal(amount))
-	)
+    ).id
 
 	private fun createAccount(
 		name: String = "account",

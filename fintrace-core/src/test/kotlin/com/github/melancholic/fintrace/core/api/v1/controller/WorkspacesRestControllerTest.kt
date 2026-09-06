@@ -15,19 +15,12 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import jakarta.servlet.ServletException
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import java.net.URI
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 /**
  * The HTTP contract for `/api/v1/workspaces`.
@@ -50,11 +43,15 @@ class WorkspacesRestControllerTest(
 	}
 
 	@Test
-	fun `creates a workspace and returns its id`() {
+    fun `creates a workspace and returns its state`() {
 		mvc.perform(createRequest())
 			.andExpect(status().isCreated)
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 			.andExpect(jsonPath("$.id").exists())
+            .andExpect(jsonPath("$.name").value("budget"))
+            .andExpect(jsonPath("$.status").value("NEW"))
+            .andExpect(jsonPath("$.version").value(0))
+            .andExpect(jsonPath("$.createdAt").exists())
 	}
 
 	@Test

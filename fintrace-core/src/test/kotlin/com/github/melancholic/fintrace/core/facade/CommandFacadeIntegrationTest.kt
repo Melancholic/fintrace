@@ -70,12 +70,23 @@ class CommandFacadeIntegrationTest(
 	}
 
 	@Test
-	fun `returns the entity id shared by the event and the projection`() {
+    fun `returns the state it wrote, shared by the event and the projection`() {
 		val returned = facade.processCommand(command())
 
-		assertEquals(returned, event().entityId, "events.aggregate_id")
-		assertEquals(returned, operation().id, "operations.id")
-		assertEquals(returned, payload().id, "payload id")
+        // The command answers with the row it applied, so the response cannot disagree with what
+        // was written (§10.0).
+        assertEquals(returned.id, event().entityId, "events.aggregate_id")
+        assertEquals(returned.id, operation().id, "operations.id")
+        assertEquals(returned.id, payload().id, "payload id")
+        assertEquals(returned, operation().let {
+            com.github.melancholic.fintrace.core.domain.projection.OperationProjection(
+                id = it.id,
+                workspaceId = it.workspaceId,
+                amount = it.amount,
+                occurredAt = it.occurredAt,
+                recordedAt = it.recordedAt,
+            )
+        }, "the returned row equals the stored one")
 	}
 
 	@Test
@@ -147,8 +158,8 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `each command gets its own entity id and event sequence`() {
-		val first = facade.processCommand(command())
-		val second = facade.processCommand(command())
+        val first = facade.processCommand(command()).id
+        val second = facade.processCommand(command()).id
 
 		assertTrue(first != second, "entity ids must be distinct")
 		assertEquals(2, count("t_events"))
@@ -172,7 +183,7 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `revises an operation in place`() {
-		val id = facade.processCommand(command())
+        val id = facade.processCommand(command()).id
 
 		facade.processCommand(revise(id, amount = BigDecimal("250.0000")))
 
@@ -186,7 +197,7 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `classifies a revision and keeps the aggregate id`() {
-		val id = facade.processCommand(command())
+        val id = facade.processCommand(command()).id
 
 		facade.processCommand(revise(id))
 
@@ -198,7 +209,7 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `a revision can move the business date`() {
-		val id = facade.processCommand(command())
+        val id = facade.processCommand(command()).id
 		val moved = LocalDateTime.parse("2019-07-04T12:00:00")
 
 		facade.processCommand(revise(id, occurredAt = moved))
@@ -209,7 +220,7 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `cancelling removes the row and keeps the log`() {
-		val id = facade.processCommand(command())
+        val id = facade.processCommand(command()).id
 
 		facade.processCommand(cancel(id))
 
@@ -221,7 +232,7 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `classifies a cancellation and keeps the aggregate id`() {
-		val id = facade.processCommand(command())
+        val id = facade.processCommand(command()).id
 
 		facade.processCommand(cancel(id))
 
@@ -232,8 +243,8 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `cancelling one operation leaves the others alone`() {
-		val doomed = facade.processCommand(command())
-		val kept = facade.processCommand(command(amount = BigDecimal("7.0000")))
+        val doomed = facade.processCommand(command()).id
+        val kept = facade.processCommand(command(amount = BigDecimal("7.0000"))).id
 
 		facade.processCommand(cancel(doomed))
 

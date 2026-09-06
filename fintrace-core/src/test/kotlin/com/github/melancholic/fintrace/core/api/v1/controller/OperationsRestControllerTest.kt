@@ -15,18 +15,12 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import java.math.BigDecimal
 import java.net.URI
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 
 /**
@@ -57,11 +51,14 @@ class OperationsRestControllerTest(
 	}
 
 	@Test
-	fun `creates an operation and returns its id`() {
+    fun `creates an operation and returns its state`() {
 		mvc.perform(createRequest())
 			.andExpect(status().isCreated)
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 			.andExpect(jsonPath("$.id").exists())
+            .andExpect(jsonPath("$.amount").value(-1234.5600))
+            .andExpect(jsonPath("$.occurredAt").value("2026-03-15T14:30:00"))
+            .andExpect(jsonPath("$.recordedAt").exists())
 	}
 
 	@Test
@@ -146,12 +143,15 @@ class OperationsRestControllerTest(
 	}
 
 	@Test
-	fun `revises an operation and answers with no content`() {
+    fun `revises an operation and answers with its new state`() {
 		val id = createdId()
 
+        // The response is the row that was written, so a client needs no second request (§10.0).
 		mvc.perform(reviseRequest(id, amount = "42.0000", occurredAt = "2021-05-05T10:00:00"))
-			.andExpect(status().isNoContent)
-			.andExpect(content().string(""))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(id.toString()))
+            .andExpect(jsonPath("$.amount").value(42.0000))
+            .andExpect(jsonPath("$.occurredAt").value("2021-05-05T10:00:00"))
 
 		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(jsonPath("$.id").value(id.toString()))
@@ -163,7 +163,7 @@ class OperationsRestControllerTest(
 	fun `a revision replaces rather than adds`() {
 		val id = createdId()
 
-		mvc.perform(reviseRequest(id)).andExpect(status().isNoContent)
+        mvc.perform(reviseRequest(id)).andExpect(status().isOk)
 
 		// The projection holds current state only; the history lives in the event log.
 		assertEquals(1, count())

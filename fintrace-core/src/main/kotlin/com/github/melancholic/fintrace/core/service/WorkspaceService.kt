@@ -18,7 +18,7 @@ import java.util.*
 
 
 interface WorkspaceService {
-    fun createWorkspace(userId: UUID, request: CreateWorkspaceRequest): UUID
+    fun createWorkspace(userId: UUID, request: CreateWorkspaceRequest): Workspace
     fun getWorkspace(userId: UUID, workspaceId: UUID): Workspace
     fun getWorkspaces(userId: UUID, page: Pageable): List<Workspace>
     fun editWorkspace(userId: UUID, workspaceId: UUID, request: EditWorkspaceRequest)
@@ -40,9 +40,10 @@ class WorkspaceServiceImpl(
     override fun createWorkspace(
         userId: UUID,
         request: CreateWorkspaceRequest
-    ): UUID {
+    ): Workspace {
         validationService.validate(request)
-        return workspaceDAO.create(userId, request)
+        val workspaceId = workspaceDAO.create(userId, request)
+        return getWorkspace(userId, workspaceId)
     }
 
     override fun getWorkspace(

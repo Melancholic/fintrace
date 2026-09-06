@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.*
 
 interface WorkspaceFacade {
-    fun createWorkspace(request: CreateWorkspaceRequest): UUID
+    fun createWorkspace(request: CreateWorkspaceRequest): Workspace
     fun getWorkspace(workspaceId: UUID): Workspace
     fun getWorkspaces(page: Pageable): List<Workspace>
     fun editWorkspace(workspaceId: UUID, request: EditWorkspaceRequest): WorkspaceResponse
@@ -30,7 +30,7 @@ class WorkspaceFacadeImpl(
     private val workspaceMapper: WorkspaceMapper
 ) : WorkspaceFacade {
 
-    override fun createWorkspace(request: CreateWorkspaceRequest): UUID {
+    override fun createWorkspace(request: CreateWorkspaceRequest): Workspace {
         return workspaceService.createWorkspace(identityProvider.currentUserId(), request)
     }
 

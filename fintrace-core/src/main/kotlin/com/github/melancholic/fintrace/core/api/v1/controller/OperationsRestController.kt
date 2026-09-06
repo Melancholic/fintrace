@@ -1,6 +1,5 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
-import com.github.melancholic.fintrace.core.api.v1.dto.CreateUUIDEntityResponse
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationResponse
 import com.github.melancholic.fintrace.core.api.v1.mapper.OperationMapper
@@ -40,8 +39,8 @@ class OperationsRestController(
     fun createNewOperation(
         @PathVariable("workspaceId") workspaceId: UUID,
         @Valid @RequestBody request: OperationRequest
-    ): ResponseEntity<CreateUUIDEntityResponse> {
-        val createdId = commandFacade.processCommand(
+    ): ResponseEntity<OperationResponse> {
+        val projection: OperationProjection = commandFacade.processCommand(
             CreateOperationCommand(
                 workspaceId,
                 request.occurredAt,
@@ -52,12 +51,12 @@ class OperationsRestController(
         val location = MvcUriComponentsBuilder
             .fromController(OperationsRestController::class.java)
             .path("/{operationId}")
-            .buildAndExpand(workspaceId, createdId)
+            .buildAndExpand(workspaceId, projection.id)
             .toUri()
 
         return ResponseEntity
             .created(location)
-            .body(CreateUUIDEntityResponse(createdId))
+            .body(mapper.toResponse(projection))
     }
 
     @Operation(summary = "Fetch an operation")
@@ -79,7 +78,7 @@ class OperationsRestController(
 
     @Operation(summary = "Replace an operation")
     @ApiResponses(
-        ApiResponse(responseCode = "204", description = "Revised"),
+        ApiResponse(responseCode = "200", description = "Revised; body carries the new state"),
         ApiResponse(responseCode = "400", description = "Malformed body, or `occurredAt` in the future"),
         ApiResponse(responseCode = "404", description = "No such operation in this workspace"),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
@@ -89,8 +88,8 @@ class OperationsRestController(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("operationId") operationId: UUID,
         @Valid @RequestBody request: OperationRequest
-    ): ResponseEntity<Void> {
-        commandFacade.processCommand(
+    ): ResponseEntity<OperationResponse> {
+        val projection = commandFacade.processCommand(
             ReviseOperationCommand(
                 workspaceId = workspaceId,
                 operationId = operationId,
@@ -99,7 +98,7 @@ class OperationsRestController(
             )
         )
 
-        return ResponseEntity.noContent().build()
+        return ResponseEntity.ok(mapper.toResponse(projection))
     }
 
     @Operation(summary = "Cancel an operation")
