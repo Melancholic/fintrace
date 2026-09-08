@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **M0 complete** (tasks 0.1–0.13 — see `docs/plans/M0.md`); **M1 in progress**, per
 `docs/plans/M1.md` and `docs/tasks.md`.
 
-`fintrace-core` runs the operation aggregate end to end — create, revise and cancel:
-`POST` / `GET` / `PUT` / `DELETE /api/v1/workspaces/{workspaceId}/operations[/{operationId}]` →
-`CommandFacade.processCommand` → dispatcher → handler → event + projection, in one transaction;
-and `POST /admin/api/v1/workspaces/{id}/replay` clears the projection and rebuilds it from the
-event log. Only Core exists — the importer, BFF and web are later milestones.
+`fintrace-core` runs four areas end to end — workspaces, operations, accounts and categories —
+each through `CommandFacade.processCommand` → dispatcher → handler → event + projection, in one
+transaction, with REST on top; and `POST /admin/api/v1/workspaces/{id}/replay` clears the
+projection and rebuilds it from the event log. Only Core exists — the importer, BFF and web are
+later milestones.
 
 **`docs/status.md` is the live progress record** — what is done, what is next, and the known
 gaps. Read it first; it is regenerated whenever the status is reviewed, and it is the one file
@@ -28,7 +28,7 @@ explicitly, `@Transactional(MANDATORY)` so it cannot be called from outside a tr
 (SQL, returns row counts rather than asserting). Validation services live beside the services and
 hold rules that must also hold for the CLI and the importer.
 
-Verify with `./gradlew clean test` (199 tests). Prefer `clean` — incremental builds have twice
+Verify with `./gradlew clean test` (242 tests). Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
 **Workspace ownership is enforced now** — `owner_id`, plus `requireWritable` on the command path

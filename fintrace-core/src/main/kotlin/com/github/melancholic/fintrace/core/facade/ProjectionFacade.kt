@@ -1,9 +1,11 @@
 package com.github.melancholic.fintrace.core.facade
 
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.ProjectionDAORegistry
 import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
+import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.security.IdentityProvider
 import com.github.melancholic.fintrace.core.service.WorkspaceService
@@ -15,6 +17,8 @@ interface ProjectionFacade {
     fun getOperation(workspaceId: UUID, operationId: UUID): OperationProjection
     fun getAccount(workspaceId: UUID, accountId: UUID): AccountProjection
     fun getAllAccounts(workspaceId: UUID, includeArchived: Boolean): List<AccountProjection>
+    fun getCategory(workspaceId: UUID, categoryId: UUID): CategoryProjection
+    fun getAllCategories(workspaceId: UUID, includeArchived: Boolean): List<CategoryProjection>
 }
 
 @Service
@@ -49,6 +53,24 @@ class ProjectionFacadeImpl(
     ): List<AccountProjection> {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
         return daoRegistry[AccountProjectionDAO::class.java].getAllAccounts(workspace.id, includeArchived)
+    }
+
+    @Transactional(readOnly = true)
+    override fun getCategory(
+        workspaceId: UUID,
+        categoryId: UUID
+    ): CategoryProjection {
+        val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
+        return daoRegistry[CategoryProjectionDAO::class.java].getById(workspace.id, categoryId)
+    }
+
+    @Transactional(readOnly = true)
+    override fun getAllCategories(
+        workspaceId: UUID,
+        includeArchived: Boolean
+    ): List<CategoryProjection> {
+        val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
+        return daoRegistry[CategoryProjectionDAO::class.java].getAllCategories(workspace.id, includeArchived)
     }
 
 }

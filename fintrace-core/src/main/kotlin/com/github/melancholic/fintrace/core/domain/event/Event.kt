@@ -18,6 +18,7 @@ data class Event(
 enum class EntityType {
 	OPERATION,
 	ACCOUNT,
+	CATEGORY,
 }
 
 enum class EventType {

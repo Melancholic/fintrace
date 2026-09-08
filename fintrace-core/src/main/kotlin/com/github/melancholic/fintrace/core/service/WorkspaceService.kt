@@ -2,13 +2,23 @@ package com.github.melancholic.fintrace.core.service
 
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.EditWorkspaceRequest
+import com.github.melancholic.fintrace.core.config.DefaultIcons.ICON_EXPENSE
+import com.github.melancholic.fintrace.core.config.DefaultIcons.ICON_INCOME
+import com.github.melancholic.fintrace.core.config.DefaultIcons.ICON_OTHERS
+import com.github.melancholic.fintrace.core.config.ROOT_EXPENSE_CAT_NAME
+import com.github.melancholic.fintrace.core.config.ROOT_INCOME_CAT_NAME
+import com.github.melancholic.fintrace.core.config.ROOT_OTHERS_CAT_NAME
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.domain.command.CreateCategoryCommand
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.entity.CategorySystemCode
 import com.github.melancholic.fintrace.core.domain.entity.Workspace
 import com.github.melancholic.fintrace.core.domain.entity.WorkspaceStatus
 import com.github.melancholic.fintrace.core.exception.ActionConflictException
 import com.github.melancholic.fintrace.core.exception.ApplicationException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
 import com.github.melancholic.fintrace.core.exception.OperationNotAllowedException
+import com.github.melancholic.fintrace.core.service.command.CommandDispatcher
 import com.github.melancholic.fintrace.core.validation.WorkspaceValidationService
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -34,7 +44,8 @@ interface WorkspaceService {
 @Transactional(propagation = Propagation.MANDATORY)
 class WorkspaceServiceImpl(
     private val workspaceDAO: WorkspaceDAO,
-    private val validationService: WorkspaceValidationService
+    private val validationService: WorkspaceValidationService,
+    private val commandDispatcher: CommandDispatcher,
 ) : WorkspaceService {
 
     override fun createWorkspace(
@@ -43,7 +54,9 @@ class WorkspaceServiceImpl(
     ): Workspace {
         validationService.validate(request)
         val workspaceId = workspaceDAO.create(userId, request)
-        return getWorkspace(userId, workspaceId)
+        val workspace = getWorkspace(userId, workspaceId)
+        initWorkspace(workspace)
+        return workspace
     }
 
     override fun getWorkspace(
@@ -141,12 +154,60 @@ class WorkspaceServiceImpl(
         return workspace
     }
 
-    override fun requireReadable(userId: UUID, workspaceId: UUID) : Workspace {
+    override fun requireReadable(userId: UUID, workspaceId: UUID): Workspace {
         val workspace = getWorkspace(userId, workspaceId)
         if (!READABLE_STATUSES.contains(workspace.status)) {
             throw OperationNotAllowedException("Operations from workspace '${workspace.id}' not allowed to read")
         }
         return workspace
+    }
+
+    private fun initWorkspace(workspace: Workspace) {
+        initCategories(workspace)
+    }
+
+    private fun initCategories(workspace: Workspace) {
+        val rootIncome = commandDispatcher.dispatch(
+            CreateCategoryCommand.system(
+                workspaceId = workspace.id,
+                parentId = null,
+                kind = CategoryKind.INCOME,
+                name = ROOT_INCOME_CAT_NAME,
+                icon = ICON_INCOME,
+                systemCode = CategorySystemCode.INCOME_ROOT
+            )
+        )
+        commandDispatcher.dispatch(
+            CreateCategoryCommand.system(
+                workspaceId = workspace.id,
+                parentId = rootIncome.id,
+                kind = CategoryKind.INCOME,
+                name = ROOT_OTHERS_CAT_NAME,
+                icon = ICON_OTHERS,
+                systemCode = CategorySystemCode.INCOME_OTHERS
+            )
+        )
+
+        val rootExpense = commandDispatcher.dispatch(
+            CreateCategoryCommand.system(
+                workspaceId = workspace.id,
+                parentId = null,
+                kind = CategoryKind.EXPENSE,
+                name = ROOT_EXPENSE_CAT_NAME,
+                icon = ICON_EXPENSE,
+                systemCode = CategorySystemCode.EXPENSE_ROOT
+            )
+        )
+        commandDispatcher.dispatch(
+            CreateCategoryCommand.system(
+                workspaceId = workspace.id,
+                parentId = rootExpense.id,
+                kind = CategoryKind.EXPENSE,
+                name = ROOT_OTHERS_CAT_NAME,
+                icon = ICON_OTHERS,
+                systemCode = CategorySystemCode.EXPENSE_OTHERS
+            )
+        )
     }
 
     companion object {

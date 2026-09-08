@@ -1,10 +1,13 @@
 package com.github.melancholic.fintrace.core
 
+import com.github.melancholic.fintrace.core.TestWorkspaces.createWithCategories
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.service.WorkspaceService
 import org.springframework.jdbc.core.simple.JdbcClient
-import java.util.UUID
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.*
 
 /**
  * Every table carrying `workspace_id` has a real foreign key to `t_workspaces`, so a test can no
@@ -36,12 +39,39 @@ internal object TestWorkspaces {
 		jdbc.sql("DELETE FROM t_workspaces").update()
 	}
 
+    /**
+     * A **bare** workspace: the row and nothing else, so `t_events` starts empty and a test can
+     * assert absolute event counts. It has **no categories**, because seeding them is part of
+     * `WorkspaceService.createWorkspace` rather than of the insert.
+     *
+     * Use [createWithCategories] for anything that needs the system categories — from 1.16 onward
+     * that is any test touching an operation, since operations carry a `category_id`.
+     */
 	fun create(
 		workspaceDAO: WorkspaceDAO,
 		usersDAO: UsersDAO,
 		name: String = "test-workspace",
 		currency: String = "EUR",
 	): UUID = workspaceDAO.create(ownerId(usersDAO), CreateWorkspaceRequest(name, currency))
+
+    /**
+     * A workspace as the application makes one: created through the service, so the four system
+     * categories are seeded (§4.7).
+     *
+     * Costs four category events, so a test using this counts events relative to a baseline rather
+     * than from zero. Goes through the service rather than the facade so it needs no security
+     * context — the caller is passed explicitly — and through a `TransactionTemplate` because the
+     * service is `@Transactional(MANDATORY)`.
+     */
+    fun createWithCategories(
+        transactions: TransactionTemplate,
+        workspaceService: WorkspaceService,
+        usersDAO: UsersDAO,
+        name: String = "test-workspace",
+        currency: String = "EUR",
+    ): UUID = transactions.execute {
+        workspaceService.createWorkspace(ownerId(usersDAO), CreateWorkspaceRequest(name, currency)).id
+    }
 
 	fun ownerId(usersDAO: UsersDAO): UUID = usersDAO.getUserIdByExternalId(TEST_SUBJECT)
 		.orElseThrow { IllegalStateException("The stub user seeded by V0004 is missing") }

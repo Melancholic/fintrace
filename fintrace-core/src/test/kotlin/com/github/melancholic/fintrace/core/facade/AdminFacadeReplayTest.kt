@@ -5,6 +5,8 @@ import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.domain.command.*
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.service.WorkspaceService
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -12,10 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -33,6 +37,8 @@ class AdminFacadeReplayTest(
 	@Autowired private val jdbc: JdbcClient,
 	@Autowired private val workspaceDAO: WorkspaceDAO,
 	@Autowired private val usersDAO: UsersDAO,
+    @Autowired private val workspaceService: WorkspaceService,
+    @Autowired private val transactions: TransactionTemplate,
 ) {
 
 	private lateinit var workspace: UUID
@@ -220,6 +226,72 @@ class AdminFacadeReplayTest(
 		assertTrue(row.archived)
 	}
 
+    @Test
+    fun `rebuilds all three aggregates at once`() {
+        // A seeded workspace, so the four system categories are part of what has to come back.
+        val seeded = TestWorkspaces.createWithCategories(transactions, workspaceService, usersDAO, name = "seeded")
+        val food = createCategory(seeded, parent = expenseRoot(seeded), name = "Food")
+        createCategory(seeded, parent = food, name = "Groceries")
+        commandFacade.processCommand(CreateAccountCommand(seeded, "cash", "EUR", icon = null))
+        create(workspaceId = seeded)
+        val categoriesBefore = categories(seeded)
+        val accountsBefore = accounts(seeded)
+        val operationsBefore = operations(seeded)
+
+        jdbc.sql("DELETE FROM t_categories").update()
+        jdbc.sql("DELETE FROM t_accounts").update()
+        jdbc.sql("DELETE FROM t_operations").update()
+        adminFacade.replayWorkspace(seeded)
+
+        assertEquals(categoriesBefore, categories(seeded))
+        assertEquals(accountsBefore, accounts(seeded))
+        assertEquals(operationsBefore, operations(seeded))
+        assertEquals(6, categoriesBefore.size, "sanity: four seeded plus two of our own")
+    }
+
+    @Test
+	fun `rebuilds the tree structure and the system codes`() {
+        val seeded = TestWorkspaces.createWithCategories(transactions, workspaceService, usersDAO, name = "seeded")
+        val root = expenseRoot(seeded)
+        val food = createCategory(seeded, parent = root, name = "Food")
+        createCategory(seeded, parent = food, name = "Groceries")
+
+        jdbc.sql("DELETE FROM t_categories").update()
+        adminFacade.replayWorkspace(seeded)
+
+        // parent_id is the tree: if a rebuild loses it, the projection is a flat list that still
+        // passes a row-count assertion.
+        val rebuilt = categories(seeded).associateBy { it.id }
+        assertEquals(root, rebuilt.getValue(food).parentId)
+        assertEquals(food, rebuilt.values.single { it.name == "Groceries" }.parentId)
+        assertEquals(null, rebuilt.getValue(root).parentId, "a root keeps its null parent")
+		assertEquals(
+			"EXPENSE_ROOT",
+			rebuilt.getValue(root).systemCode,
+			"a seeded root rebuilds with the code it was seeded with, not merely as 'a system category'",
+		)
+		assertNull(rebuilt.getValue(food).systemCode)
+    }
+
+    @Test
+    fun `rebuilds an archived subtree`() {
+        val seeded = TestWorkspaces.createWithCategories(transactions, workspaceService, usersDAO, name = "seeded")
+        val food = createCategory(seeded, parent = expenseRoot(seeded), name = "Food")
+        val groceries = createCategory(seeded, parent = food, name = "Groceries")
+        commandFacade.processCommand(SetCategoryArchivedCommand(seeded, food, archived = true))
+        val before = categories(seeded)
+
+        jdbc.sql("DELETE FROM t_categories").update()
+        adminFacade.replayWorkspace(seeded)
+
+        // The cascade wrote one event per node (§4.7). Replaying only the event addressed to the
+        // parent would bring Groceries back unarchived.
+        assertEquals(before, categories(seeded))
+        val rebuilt = categories(seeded).associateBy { it.id }
+        assertTrue(rebuilt.getValue(food).archived)
+        assertTrue(rebuilt.getValue(groceries).archived, "the child's own event carries its archived state")
+    }
+
 	@Test
 	fun `preserves amount and timestamps exactly`() {
 		create(amount = "-1234.5600", occurredAt = BACK_DATED)
@@ -244,6 +316,40 @@ class AdminFacadeReplayTest(
 		name: String = "account",
 		currency: String = "EUR",
 	): UUID = commandFacade.processCommand(CreateAccountCommand(workspace, name, currency, icon = null)).id
+
+    private fun createCategory(workspaceId: UUID, parent: UUID, name: String): UUID = commandFacade
+        .processCommand(
+            CreateCategoryCommand.custom(workspaceId, CategoryKind.EXPENSE, name, parent, icon = null)
+        ).id
+
+    private fun expenseRoot(workspaceId: UUID): UUID = jdbc
+        .sql("SELECT id FROM t_categories WHERE workspace_id = :ws AND parent_id IS NULL AND kind = 'EXPENSE'")
+        .param("ws", workspaceId)
+        .query(UUID::class.java)
+        .single()
+
+    private fun categories(workspaceId: UUID): List<CategoryRow> = jdbc
+        .sql(
+            """
+			SELECT id, workspace_id, parent_id, name, kind, icon, archived, system_code, recorded_at
+			FROM t_categories WHERE workspace_id = :ws ORDER BY id
+			"""
+        )
+        .param("ws", workspaceId)
+        .query { rs, _ ->
+            CategoryRow(
+                id = rs.getObject("id", UUID::class.java),
+                workspaceId = rs.getObject("workspace_id", UUID::class.java),
+                parentId = rs.getObject("parent_id", UUID::class.java),
+                name = rs.getString("name"),
+                kind = rs.getString("kind"),
+                icon = rs.getString("icon"),
+                archived = rs.getBoolean("archived"),
+				systemCode = rs.getString("system_code"),
+                recordedAt = rs.getObject("recorded_at", LocalDateTime::class.java),
+            )
+        }
+        .list()
 
 	private fun accounts(workspaceId: UUID): List<AccountRow> = jdbc
 		.sql(
@@ -297,6 +403,18 @@ class AdminFacadeReplayTest(
 		val archived: Boolean,
 		val recordedAt: LocalDateTime,
 	)
+
+    private data class CategoryRow(
+        val id: UUID,
+        val workspaceId: UUID,
+        val parentId: UUID?,
+        val name: String,
+        val kind: String,
+        val icon: String?,
+        val archived: Boolean,
+        val systemCode: String?,
+        val recordedAt: LocalDateTime,
+    )
 
 	private data class Row(
 		val id: UUID,

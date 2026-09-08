@@ -89,6 +89,26 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
             .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/accounts/{accountId}/restore'].post.summary").exists())
 	}
 
+    @Test
+    fun `documents every category endpoint`() {
+        mvc.perform(get("/v3/api-docs"))
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories'].post.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories'].get.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].get.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].put.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].delete.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}/restore'].post.summary").exists())
+    }
+
+    @Test
+    fun `documents the tree conflicts`() {
+        // A generated client has to know a move can be refused, or a cross-branch move or a cycle
+        // looks like a server fault to it.
+        mvc.perform(get("/v3/api-docs"))
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].put.responses.409").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].delete.responses.409").exists())
+    }
+
 	@Test
 	fun `serves the Swagger UI anonymously`() {
 		mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk)

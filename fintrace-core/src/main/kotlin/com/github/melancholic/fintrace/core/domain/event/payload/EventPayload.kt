@@ -24,6 +24,9 @@ import java.util.*
 
 	JsonSubTypes.Type(value = AccountCreatedV1::class, name = AccountCreatedV1.TYPE),
 	JsonSubTypes.Type(value = AccountRevisedV1::class, name = AccountRevisedV1.TYPE),
+
+	JsonSubTypes.Type(value = CategoryCreatedV1::class, name = CategoryCreatedV1.TYPE),
+	JsonSubTypes.Type(value = CategoryRevisedV1::class, name = CategoryRevisedV1.TYPE)
 )
 sealed interface EventPayload {
 	val version: Int

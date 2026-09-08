@@ -52,8 +52,9 @@ events, and the projection rows are identical.
       — plus `updated_at` and `version` (optimistic locking, §10.0.1)
       — plus `t_users` and `owner_id` pulled forward from M5 (§7.4), and the `ON DELETE CASCADE`
       foreign keys from `t_events` and `t_operations`. No slug.
-- [~] **1.2** Create workspace → `NEW` — **done**; seeding the four system categories in the same
-      transaction (§4.7) waits for categories (1.11–1.13)
+- [x] ~~**1.2** Create workspace → `NEW`; seed the four system categories in the same
+  transaction (§4.7): both roots, both `Others`~~ — seeded through the dispatcher, never the
+  command facade, so creating a workspace does not activate it
 - [ ] **1.3** Emptiness check as a single reusable function scanning every table carrying
       `workspace_id` (§4.2)
 - [x] ~~**1.4** Status transitions (§4.1.1): `ACTIVE ↔ ARCHIVED`, `→ DELETED`, and `NEW → ACTIVE`
@@ -81,13 +82,20 @@ events, and the projection rows are identical.
 
 ### Categories
 
-- [ ] **1.11** Migration: `parent_id`, `kind`, `deleted`, `system`, `icon`
-- [ ] **1.12** Recursive descendants query (`WITH RECURSIVE`) as a reusable component —
-      needed by both statistics and the UI tree
-- [ ] **1.13** Create / rename / move / soft-delete commands
-- [ ] **1.14** Move validation: same branch only; target is not a descendant (cycle guard);
-      `Others` stays a leaf; `system` categories immutable
-- [ ] **1.15** CRUD endpoints
+- [x] ~~**1.11** Migration: `parent_id`, `kind`, `archived`, `system`, `icon`~~ — `archived`, not
+  `deleted`: categories are archived and restorable, like accounts (§4.7)
+- [x] ~~**1.12** Recursive descendants query (`WITH RECURSIVE`) as a reusable component —
+  needed by both statistics and the UI tree~~ — `findSubtreeIds`, root included, `UNION` so a
+  cycle terminates
+- [x] ~~**1.13** Create / rename / move / soft-delete commands~~ — a move is a revise carrying a
+  different `parentId`, not its own command. Archiving cascades to the subtree, one event per
+  node, already-archived nodes skipped; **restore returns only the target** (§4.7). Operations
+  keep pointing at the archived category
+- [x] ~~**1.14** Move validation: same branch only; target is not a descendant (cycle guard);
+  `Others` stays a leaf; `system` categories immutable~~ — plus: parent must exist, be in the
+  same workspace, and not be archived
+- [x] ~~**1.15** CRUD endpoints~~ — `DELETE` archives, `POST /{id}/restore` reverses, listing is
+  flat with `?includeArchived`
 
 ### Operations, transfers, anchors
 

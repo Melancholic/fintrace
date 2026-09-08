@@ -755,6 +755,28 @@ Explicitly **not** copying the source, where deleting a category cascades into d
 transactions and can move account balances. Tidying up a category list must never rewrite
 history.
 
+**Deleting a category deletes its whole subtree**, one event per node, each carrying that node's
+own state with `deleted = true`. The alternative — refusing to delete a category that has children
+— was rejected as busywork: the user would have to remove a branch leaf by leaf, and a child whose
+parent is hidden has nowhere to render in the tree.
+
+The deletion must not be recorded as a single event on the parent naming its descendants: an
+event's `aggregate_id` identifies the entity it describes, so a child's own stream would still say
+`deleted = false` and the next revision of that child would resurrect it from stale state. Nodes
+already deleted are skipped rather than re-recorded.
+
+**Deletion is one-way.** There is no restore, which is what keeps the cascade simple: restoring a
+parent would otherwise have to remember which children were already deleted before it, or it would
+resurrect ones the user had removed deliberately.
+
+**Operations keep pointing at the deleted category.** Reassigning them to the branch's `Others` was
+considered and rejected: it would move closed periods' figures from one category to another, which
+is the retroactive rewrite this section exists to prevent, and it would destroy the only record of
+what those operations were actually filed under. A deleted category is hidden from *pickers* and
+still resolvable for *display*, so a report can show "Food (deleted)" truthfully. If moving
+operations between categories is wanted, it belongs in an explicit action the user asks for, not
+as a side effect of tidying a list.
+
 #### Storage: adjacency list
 
 **Decision: `parent_id` on each category**, with recursive queries for tree traversal.

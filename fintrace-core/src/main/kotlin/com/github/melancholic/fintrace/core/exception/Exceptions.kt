@@ -6,13 +6,13 @@ import java.util.*
 
 // BUSINESS EXCEPTIONS
 @ResponseStatus(value = HttpStatus.NOT_FOUND)
-class NotFoundEntityException(message: String = "Entity not found") : RuntimeException(message)
+open class NotFoundEntityException(message: String = "Entity not found") : RuntimeException(message)
 
 @ResponseStatus(value = HttpStatus.BAD_REQUEST)
 class ValidationError(message: String = "Validation error")  : RuntimeException(message)
 
 @ResponseStatus(value = HttpStatus.CONFLICT)
-class ActionConflictException(message: String = "Conflict")  : RuntimeException(message)
+open class ActionConflictException(message: String = "Conflict") : RuntimeException(message)
 
 @ResponseStatus(value = HttpStatus.CONFLICT)
 class OperationNotAllowedException(message: String = "Operation not allowed")  : RuntimeException(message)
