@@ -3,7 +3,6 @@ package com.github.melancholic.fintrace.core.facade
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
-import com.github.melancholic.fintrace.core.dao.projection.ProjectionDAORegistry
 import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
 import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
@@ -23,7 +22,9 @@ interface ProjectionFacade {
 
 @Service
 class ProjectionFacadeImpl(
-    private val daoRegistry: ProjectionDAORegistry,
+    private val operationDAO: OperationProjectionDAO,
+    private val accountDAO: AccountProjectionDAO,
+    private val categoryDAO: CategoryProjectionDAO,
     private val workspaceService: WorkspaceService,
     private val identityProvider: IdentityProvider
 ) : ProjectionFacade {
@@ -34,7 +35,7 @@ class ProjectionFacadeImpl(
         operationId: UUID
     ): OperationProjection {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
-        return daoRegistry[OperationProjectionDAO::class.java].getById(workspace.id, operationId)
+        return operationDAO.getById(workspace.id, operationId)
     }
 
     @Transactional(readOnly = true)
@@ -43,7 +44,7 @@ class ProjectionFacadeImpl(
         accountId: UUID
     ): AccountProjection {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
-        return daoRegistry[AccountProjectionDAO::class.java].getById(workspace.id, accountId)
+        return accountDAO.getById(workspace.id, accountId)
     }
 
     @Transactional(readOnly = true)
@@ -52,7 +53,7 @@ class ProjectionFacadeImpl(
         includeArchived: Boolean
     ): List<AccountProjection> {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
-        return daoRegistry[AccountProjectionDAO::class.java].getAllAccounts(workspace.id, includeArchived)
+        return accountDAO.getAllAccounts(workspace.id, includeArchived)
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +62,7 @@ class ProjectionFacadeImpl(
         categoryId: UUID
     ): CategoryProjection {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
-        return daoRegistry[CategoryProjectionDAO::class.java].getById(workspace.id, categoryId)
+        return categoryDAO.getById(workspace.id, categoryId)
     }
 
     @Transactional(readOnly = true)
@@ -70,7 +71,7 @@ class ProjectionFacadeImpl(
         includeArchived: Boolean
     ): List<CategoryProjection> {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
-        return daoRegistry[CategoryProjectionDAO::class.java].getAllCategories(workspace.id, includeArchived)
+        return categoryDAO.getAllCategories(workspace.id, includeArchived)
     }
 
 }

@@ -3,7 +3,6 @@ package com.github.melancholic.fintrace.core.validation
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
-import com.github.melancholic.fintrace.core.dao.projection.ProjectionDAORegistry
 import com.github.melancholic.fintrace.core.domain.command.*
 import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.exception.ActionConflictException
@@ -24,7 +23,8 @@ interface OperationValidationService {
 class OperationValidationServiceImpl(
     private val projectionDAO: OperationProjectionDAO,
     private val timestampProvider: TimestampProvider,
-    private val projectionDAORegistry: ProjectionDAORegistry
+    private val accountDAO: AccountProjectionDAO,
+    private val categoryDAO: CategoryProjectionDAO
 ) : OperationValidationService {
     override fun validate(operation: CreateOperationCommand) {
         checkOccurredAt(operation)
@@ -71,24 +71,21 @@ class OperationValidationServiceImpl(
     }
 
     private fun checkAccountOnCreate(command: CreateOperationCommand) {
-        val account = projectionDAORegistry[AccountProjectionDAO::class.java]
-            .getById(command.workspaceId, command.accountId)
+        val account = accountDAO.getById(command.workspaceId, command.accountId)
         if (account.archived) {
             throw ActionConflictException("Couldn't create new operation under archived account")
         }
     }
 
     private fun checkAccountOnRevise(command: ReviseOperationCommand) {
-        projectionDAORegistry[AccountProjectionDAO::class.java]
-            .getById(command.workspaceId, command.accountId)
+        accountDAO.getById(command.workspaceId, command.accountId)
     }
 
     private fun checkCategoryOnCreate(command: CreateOperationCommand) {
         if (command.categoryId == null) {
             return
         }
-        val category = projectionDAORegistry[CategoryProjectionDAO::class.java]
-            .getById(command.workspaceId, command.categoryId)
+        val category = categoryDAO.getById(command.workspaceId, command.categoryId)
 
         if (category.archived) {
             throw ActionConflictException("Couldn't create new operation under archived category")
@@ -100,8 +97,7 @@ class OperationValidationServiceImpl(
     }
 
     private fun checkCategoryOnRevise(command: ReviseOperationCommand) {
-        val category = projectionDAORegistry[CategoryProjectionDAO::class.java]
-            .getById(command.workspaceId, command.categoryId)
+        val category = categoryDAO.getById(command.workspaceId, command.categoryId)
 
         if (category.kind != command.kind.asCategoryKind()) {
             throw ActionConflictException("Operation with kind=`${command.kind}` couldn't be under a category with kind='${category.kind}'")

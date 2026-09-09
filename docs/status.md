@@ -12,9 +12,10 @@
 
 ## Where the code is
 
-**M0 complete** (0.1–0.13). **M1: 14 of 27 task items.** The three aggregates now meet: an
+**M0 complete** (0.1–0.13). **M1: 15 of 27 task items.** The three aggregates now meet: an
 operation names an account and a category, and every rule tying them together is checked at
-command time. Replay covers all three.
+command time. Replay covers all three, and tenant scoping is now enforced by a test rather than
+by care.
 
 | Area               | State                                                                                    |
 |--------------------|------------------------------------------------------------------------------------------|
@@ -37,6 +38,7 @@ command time. Replay covers all three.
   every invariant in §4.7, CRUD endpoints
 - **1.16, 1.17** operations complete: the full field set, revise / cancel, and the validation that
   ties an operation to the two aggregates beneath it
+- **1.6** `workspace_id` on every query, by explicit parameter, guarded by `WorkspaceScopingTest`
 
 Beyond the task list: identity and ownership pulled forward from M5, optimistic locking on
 workspaces (§10.0.1), a validation service per area, OpenAPI across all five controllers, and the
@@ -95,6 +97,15 @@ because an event's `aggregate_id` identifies the entity it describes.
 create and revise have in common, so a validation rule is written once and cannot be applied to
 one path and forgotten on the other. Cancel stays outside it, carrying only an id.
 
+**`workspace_id` is an explicit parameter on every query**, and `WorkspaceScopingTest` is what
+makes that a rule rather than a habit: an unscoped query returns a plausible answer from another
+tenant, and nothing else in the suite notices.
+
+**Inject the DAO you need, not the registry.** `ProjectionDAORegistry` exists for
+`ProjectionApplier`, which dispatches on a projection's runtime type and cannot know the DAO at
+compile time. Everywhere else the DAO is known, so asking the registry for it by class only turns
+a compile error into a runtime one.
+
 **Three workspace fixtures, chosen deliberately.** `TestWorkspaces.create` inserts the row and
 nothing else, so `t_events` starts empty and a test can count events from zero;
 `createWithCategories` goes through `WorkspaceService`, so the four system categories exist;
@@ -124,17 +135,17 @@ From git history, 2026-08-30 → 2026-09-09: **23 commits over 8 active days** (
 Commits land in batches at the end of a session, so their timestamps say when work was committed,
 not how long it took — no hour figures are inferred here.
 
-Tree: 4,162 LOC main across 91 files, 5,250 LOC tests across 26, plus 8 migrations.
-Test-to-code ratio **1.26 : 1**, up from 1.15 — 1.16 added more test than production code, which
-is what a task whose substance is validation rules should look like.
+Tree: 4,158 LOC main across 91 files, 5,329 LOC tests across 27, plus 8 migrations.
+Test-to-code ratio **1.28 : 1**, up from 1.15 — 1.16 and 1.6 both added more test than production
+code, which is what tasks whose substance is rules and guarantees should look like.
 
 **Percent done**, three ways, because one number misleads:
 
 | Basis                                   | Done | Total | %   |
 |-----------------------------------------|------|-------|-----|
-| All tasks, incl. the M4–M6 placeholders | 29   | 117   | 25% |
-| Concrete milestones only (M0–M3)        | 29   | 85    | 34% |
-| M1 alone                                | 14   | 27    | 52% |
+| All tasks, incl. the M4–M6 placeholders | 30   | 117   | 26% |
+| Concrete milestones only (M0–M3)        | 30   | 85    | 35% |
+| M1 alone                                | 15   | 27    | 56% |
 
 M1 is half done by count, and the remaining half is the less repetitive half: transfers are the
 first multi-row aggregate, and anchors bring the balance arithmetic. The overall figure still
@@ -155,9 +166,6 @@ Flagged, agreed, not yet done — none of them blocking:
 | `ProjectionTarget` declares four values, only three are wired | trimming the enum would make a missing branch a compile error |
 | Emptiness check (1.3)                                         | M2 import cannot verify a `NEW` workspace is empty            |
 | Retention job (1.5b)                                          | `DELETED` workspaces accumulate; the cascade for it exists    |
-| 1.6's DAO guard test                                          | nothing fails if a new query omits `workspace_id`             |
-| `WorkspaceResponse` exposes `ownerId`                         | the caller is always the owner; the field says nothing        |
-| DAOs reached through `ProjectionDAORegistry`                  | a wiring mistake surfaces at runtime, not at compile time     |
 
 ## Deliberately deferred
 

@@ -1,6 +1,8 @@
 package com.github.melancholic.fintrace.core.validation
 
-import com.github.melancholic.fintrace.core.dao.projection.*
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
@@ -10,11 +12,9 @@ import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
 import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
-import com.github.melancholic.fintrace.core.domain.projection.Projection
 import com.github.melancholic.fintrace.core.exception.ActionConflictException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
 import com.github.melancholic.fintrace.core.exception.ValidationError
-import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -127,20 +127,6 @@ class OperationValidationServiceTest {
         private fun unsupported(): Nothing = throw UnsupportedOperationException("validation reads existence only")
     }
 
-    private class FakeRegistry(private val daos: List<ProjectionDAO<out Projection>>) : ProjectionDAORegistry {
-        @Suppress("UNCHECKED_CAST")
-        override fun <D : ProjectionDAO<out Projection>> get(candidateClass: Class<D>): D =
-            candidateClass.cast(daos.single { candidateClass.isInstance(it) })
-
-        override fun <P : Projection> resolve(candidateClass: Class<P>): ProjectionDAO<P> =
-            throw UnsupportedOperationException()
-
-        override fun resolve(target: ProjectionTarget): ProjectionDAO<out Projection> =
-            throw UnsupportedOperationException()
-
-        override fun asList(): List<ProjectionDAO<out Projection>> = daos
-    }
-
     private fun service(
         known: Set<Pair<UUID, UUID>> = emptySet(),
         dao: FakeProjectionDAO = FakeProjectionDAO(known),
@@ -153,12 +139,8 @@ class OperationValidationServiceTest {
         object : TimestampProvider {
 			override fun now(): LocalDateTime = NOW
         },
-        FakeRegistry(
-            listOf(
-                FakeAccountDAO(knownAccounts, accountArchived),
-                FakeCategoryDAO(knownCategories, categoryArchived),
-            )
-        ),
+        FakeAccountDAO(knownAccounts, accountArchived),
+        FakeCategoryDAO(knownCategories, categoryArchived),
     )
 
 	@Test

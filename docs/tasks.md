@@ -67,8 +67,14 @@ events, and the projection rows are identical.
 - [ ] **1.5b** Retention job: hard-delete workspaces `DELETED` longer than a configurable
       window (default 30 days), one transaction each, via `ON DELETE CASCADE`. Refuses a
       non-positive window; the cutoff is a parameter so the test need not wait a month
-- [ ] **1.6** `workspace_id` enforced on every query — decide the mechanism now (explicit
-      parameter vs. a repository-level guard) and apply it consistently
+- [x] ~~**1.6** `workspace_id` enforced on every query — decide the mechanism now (explicit
+  parameter vs. a repository-level guard) and apply it consistently~~ — **explicit
+  parameter**: `JdbcClient` has nothing to hook a repository-level guard onto, so the guard
+  is `WorkspaceScopingTest`, which reads every DAO's SQL constants by reflection (enumerated
+  from `ProjectionDAORegistry`, so a DAO added later is covered when it becomes a bean),
+  checks `t_events` too, and asserts every `workspace_id` column is `NOT NULL`. A fourth
+  test proves the reflection still finds SQL — without it the other three pass vacuously,
+  which is exactly what happened on the first run against CGLIB-proxied `@Repository` beans
 
 ### Accounts
 
