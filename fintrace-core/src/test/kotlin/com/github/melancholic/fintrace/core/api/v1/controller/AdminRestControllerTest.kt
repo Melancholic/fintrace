@@ -4,7 +4,10 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.facade.CommandFacade
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,7 +24,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 
 /** HTTP contract for the replay endpoint. */
@@ -37,9 +40,13 @@ class AdminRestControllerTest(
 	@Autowired private val jdbc: JdbcClient,
 	@Autowired private val workspaceDAO: WorkspaceDAO,
 	@Autowired private val usersDAO: UsersDAO,
+	@Autowired private val accountDAO: AccountProjectionDAO,
+	@Autowired private val categoryDAO: CategoryProjectionDAO,
 ) {
 
 	private lateinit var workspace: UUID
+	private lateinit var accountId: UUID
+	private lateinit var categoryId: UUID
 
 	private val replayPath get() = "/admin/api/v1/workspaces/$workspace/replay"
 
@@ -47,6 +54,8 @@ class AdminRestControllerTest(
 	fun clean() {
 		TestWorkspaces.reset(jdbc)
 		workspace = TestWorkspaces.create(workspaceDAO, usersDAO)
+		accountId = TestWorkspaces.seedAccount(accountDAO, workspace)
+		categoryId = TestWorkspaces.seedCategory(categoryDAO, workspace)
 	}
 
 	@Test
@@ -93,9 +102,13 @@ class AdminRestControllerTest(
 
 	private fun create() = commandFacade.processCommand(
 		CreateOperationCommand(
-			workspace,
-			LocalDateTime.parse("2026-03-15T14:30:00"),
-			BigDecimal("100.0000"),
+			workspaceId = workspace,
+			occurredAt = LocalDateTime.parse("2026-03-15T14:30:00"),
+			amount = BigDecimal("100.0000"),
+			accountId = accountId,
+			kind = OperationKind.EXPENSE,
+			categoryId = categoryId,
+			comment = null,
 		)
 	)
 

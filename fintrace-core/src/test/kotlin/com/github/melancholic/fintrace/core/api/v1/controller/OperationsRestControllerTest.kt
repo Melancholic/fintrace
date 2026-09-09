@@ -4,6 +4,9 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -37,9 +40,13 @@ class OperationsRestControllerTest(
 	@Autowired private val jdbc: JdbcClient,
 	@Autowired private val workspaceDAO: WorkspaceDAO,
 	@Autowired private val usersDAO: UsersDAO,
+    @Autowired private val accountDAO: AccountProjectionDAO,
+    @Autowired private val categoryDAO: CategoryProjectionDAO,
 ) {
 
 	private lateinit var workspaceId: UUID
+    private lateinit var accountId: UUID
+    private lateinit var categoryId: UUID
 
 	/** Built per test: the workspace is created through the DAO, so its id is minted, not fixed. */
 	private val operationsPath get() = "/api/v1/workspaces/$workspaceId/operations"
@@ -48,6 +55,8 @@ class OperationsRestControllerTest(
 	fun clean() {
 		TestWorkspaces.reset(jdbc)
 		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
+        accountId = TestWorkspaces.seedAccount(accountDAO, workspaceId)
+        categoryId = TestWorkspaces.seedCategory(categoryDAO, workspaceId)
 	}
 
 	@Test
@@ -56,7 +65,7 @@ class OperationsRestControllerTest(
 			.andExpect(status().isCreated)
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 			.andExpect(jsonPath("$.id").exists())
-            .andExpect(jsonPath("$.amount").value(-1234.5600))
+            .andExpect(jsonPath("$.amount").value(1234.5600))
             .andExpect(jsonPath("$.occurredAt").value("2026-03-15T14:30:00"))
             .andExpect(jsonPath("$.recordedAt").exists())
 	}
@@ -104,11 +113,19 @@ class OperationsRestControllerTest(
 		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(status().isOk)
 			.andExpect(jsonPath("$.id").value(id))
-			.andExpect(jsonPath("$.amount").value(-1234.5600))
+            .andExpect(jsonPath("$.amount").value(1234.5600))
 			.andExpect(jsonPath("$.occurredAt").value("2026-03-15T14:30:00"))
 			.andExpect(jsonPath("$.recordedAt").exists())
-			// workspaceId is in the path already; the response must not repeat it.
-			.andExpect(jsonPath("$.workspaceId").doesNotExist())
+            // Carried even though the path already names it, so a response object stays meaningful
+            // once it is held apart from the request that fetched it — as AccountResponse and
+            // CategoryResponse already do.
+            .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
+            .andExpect(jsonPath("$.accountId").value(accountId.toString()))
+            .andExpect(jsonPath("$.categoryId").value(categoryId.toString()))
+            .andExpect(jsonPath("$.kind").value("EXPENSE"))
+            .andExpect(jsonPath("$.transferId").doesNotExist())
+            .andExpect(jsonPath("$.counterpartId").doesNotExist())
+            .andExpect(jsonPath("$.externalRef").doesNotExist())
 	}
 
 	@Test
@@ -124,14 +141,64 @@ class OperationsRestControllerTest(
 	}
 
 	@Test
-	fun `accepts a positive amount`() {
+    fun `answers with the magnitude it was given, not the stored sign`() {
 		val id = idOf(
 			mvc.perform(createRequest(amount = "250.0000")).andReturn().response.contentAsString
 		)
 
+        // The sign is an internal convention (§4.13): stored negative so a balance is SUM(amount)
+        // with no CASE, but absolute on the wire in both directions — otherwise a client that
+        // reads an expense and writes it straight back gets a 400 for a body it did not author.
 		mvc.perform(get("${operationsPath}/$id").with(user(USER)))
 			.andExpect(jsonPath("$.amount").value(250.0000))
 	}
+
+    @Test
+    fun `stores an income positive and an expense negative`() {
+        // An income needs a category in the income branch: an operation's kind must agree with
+        // its category's, or the category would rewrite what the operation means.
+        val incomeCategory = TestWorkspaces.seedCategory(categoryDAO, workspaceId, CategoryKind.INCOME)
+        val expense = idOf(mvc.perform(createRequest(amount = "250.0000")).andReturn().response.contentAsString)
+        val income = idOf(
+            mvc.perform(
+                post(operationsPath).with(user(USER)).with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        body(amount = "250.0000")
+                            .replace("\"EXPENSE\"", "\"INCOME\"")
+                            .replace(categoryId.toString(), incomeCategory.toString())
+                    )
+            ).andExpect(status().isCreated).andReturn().response.contentAsString
+        )
+
+        // Read from the table, not the response: the response is unsigned by design, so only the
+        // stored value shows that a balance is SUM(amount) with no CASE (§4.13).
+        assertEquals(BigDecimal("-250.0000"), storedAmount(UUID.fromString(expense)))
+        assertEquals(BigDecimal("250.0000"), storedAmount(UUID.fromString(income)))
+    }
+
+    @Test
+    fun `rejects a negative amount`() {
+        mvc.perform(createRequest(amount = "-250.0000"))
+            .andExpect(status().isBadRequest)
+
+        assertEquals(0, count(), "a rejected command writes nothing")
+    }
+
+    @Test
+    fun `refuses to write a transfer leg through the operations endpoint`() {
+        // A transfer is a pair, and the pair is the invariant (§4.5): a leg created here would
+        // have no counterpart and no transfer_id, which is a half-transfer no rebuild can repair.
+        // /transfers is the only way in (1.20).
+        mvc.perform(
+            post(operationsPath).with(user(USER)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body().replace("\"EXPENSE\"", "\"TRANSFER\""))
+        ).andExpect(status().isConflict)
+
+        assertEquals(0, count(), "a rejected command writes nothing")
+        assertEquals(0, eventCount())
+    }
 
 	@Test
 	fun `rejects a malformed body`() {
@@ -286,7 +353,7 @@ class OperationsRestControllerTest(
 	}
 
 	private fun createRequest(
-		amount: String = "-1234.5600",
+        amount: String = "1234.5600",
 		occurredAt: String = "2026-03-15T14:30:00",
 	) = post(operationsPath)
 		.with(user(USER))
@@ -296,7 +363,7 @@ class OperationsRestControllerTest(
 
 	private fun reviseRequest(
 		operationId: UUID,
-		amount: String = "-1234.5600",
+        amount: String = "1234.5600",
 		occurredAt: String = "2026-03-15T14:30:00",
 	) = put("${operationsPath}/$operationId")
 		.with(user(USER))
@@ -315,8 +382,16 @@ class OperationsRestControllerTest(
 	private fun eventCount() = jdbc.sql("SELECT count(*) FROM t_events")
 		.query(Int::class.java).single()
 
-	private fun body(amount: String = "-1234.5600", occurredAt: String = "2026-03-15T14:30:00") =
-		"""{"amount":"$amount","occurredAt":"$occurredAt"}"""
+    private fun storedAmount(id: UUID) = jdbc.sql("SELECT amount FROM t_operations WHERE id = :id")
+        .param("id", id)
+        .query(BigDecimal::class.java).single()
+
+    /** The request carries a magnitude plus a kind; the sign is Core's business (§4.13). */
+    private fun body(amount: String = "1234.5600", occurredAt: String = "2026-03-15T14:30:00") =
+        """
+		{"amount":"$amount","occurredAt":"$occurredAt","kind":"EXPENSE",
+		 "accountId":"$accountId","categoryId":"$categoryId","comment":null}
+		"""
 
 	private fun idOf(json: String) = Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").find(json)!!.groupValues[1]
 

@@ -15,7 +15,10 @@ class ValidationError(message: String = "Validation error")  : RuntimeException(
 open class ActionConflictException(message: String = "Conflict") : RuntimeException(message)
 
 @ResponseStatus(value = HttpStatus.CONFLICT)
-class OperationNotAllowedException(message: String = "Operation not allowed")  : RuntimeException(message)
+class OperationNotAllowedException(message: String = "Operation not allowed") : ActionConflictException(message)
+
+@ResponseStatus(value = HttpStatus.CONFLICT)
+class OperationNotSupported(message: String = "Operation not supported") : ActionConflictException(message)
 
 // SECURITY EXCEPTIONS
 @ResponseStatus(value = HttpStatus.UNAUTHORIZED)

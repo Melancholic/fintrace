@@ -1,17 +1,25 @@
 package com.github.melancholic.fintrace.core.validation
 
-import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.*
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.entity.CategorySystemCode
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
+import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
+import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.domain.projection.Projection
+import com.github.melancholic.fintrace.core.exception.ActionConflictException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
 import com.github.melancholic.fintrace.core.exception.ValidationError
+import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.UUID
+import java.util.*
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
@@ -42,10 +50,116 @@ class OperationValidationServiceTest {
 			throw UnsupportedOperationException("validation reads existence only")
 	}
 
-	private fun service(known: Set<Pair<UUID, UUID>> = emptySet(), dao: FakeProjectionDAO = FakeProjectionDAO(known)) =
-		dao to OperationValidationServiceImpl(dao, object : TimestampProvider {
+    /**
+     * The validator reaches the account and category DAOs through the registry, so a unit test has
+     * to stand one up. Both answer "exists" for the fixtures below and nothing else — the rules
+     * under test are about the command, not about those tables.
+     */
+    private class FakeAccountDAO(private val known: Set<Pair<UUID, UUID>>, private val archived: Boolean = false) :
+        AccountProjectionDAO {
+        override fun exists(workspaceId: UUID, accountId: UUID) = workspaceId to accountId in known
+
+        override fun getById(workspaceId: UUID, accountId: UUID): AccountProjection {
+            if (workspaceId to accountId !in known) {
+                throw NotFoundEntityException("no such account")
+            }
+            return AccountProjection(
+                id = accountId,
+                workspaceId = workspaceId,
+                name = "account",
+                currency = "EUR",
+                archived = archived,
+                icon = null,
+                recordedAt = NOW,
+            )
+        }
+
+        override fun createOrUpdate(projection: AccountProjection): UUID = unsupported()
+        override fun getAllAccounts(workspaceId: UUID, includeArchived: Boolean): List<AccountProjection> =
+            unsupported()
+
+        override fun removeAll(workspaceId: UUID): Unit = unsupported()
+        override fun remove(workspaceId: UUID, accountId: UUID): Unit = unsupported()
+        override fun remove(workspaceId: UUID, ids: Set<UUID>): Unit = unsupported()
+
+        private fun unsupported(): Nothing = throw UnsupportedOperationException("validation reads existence only")
+    }
+
+    private class FakeCategoryDAO(private val known: Set<Pair<UUID, UUID>>, private val archived: Boolean = false) :
+        CategoryProjectionDAO {
+        override fun exists(workspaceId: UUID, categoryId: UUID) = workspaceId to categoryId in known
+
+        override fun getById(workspaceId: UUID, categoryId: UUID): CategoryProjection {
+            if (workspaceId to categoryId !in known) {
+                throw NotFoundEntityException("no such category")
+            }
+            return CategoryProjection(
+                id = categoryId,
+                workspaceId = workspaceId,
+                parentId = null,
+                name = "category",
+                kind = CategoryKind.EXPENSE,
+                archived = archived,
+                systemCode = null,
+                icon = null,
+                recordedAt = NOW,
+            )
+        }
+
+        override fun createOrUpdate(projection: CategoryProjection): UUID = unsupported()
+        override fun getByIdAsOptional(workspaceId: UUID, categoryId: UUID): Optional<CategoryProjection> =
+            unsupported()
+
+        override fun getAllCategories(workspaceId: UUID, includeArchived: Boolean): List<CategoryProjection> =
+            unsupported()
+
+        override fun findSubtreeIds(workspaceId: UUID, categoryId: UUID): List<UUID> = unsupported()
+        override fun getFallbackCategory(workspaceId: UUID, categoryKind: CategoryKind): CategoryProjection =
+            unsupported()
+
+        override fun getBySystemCode(workspaceId: UUID, systemCode: CategorySystemCode): CategoryProjection =
+            unsupported()
+
+        override fun removeAll(workspaceId: UUID): Unit = unsupported()
+        override fun remove(workspaceId: UUID, categoryId: UUID): Unit = unsupported()
+        override fun remove(workspaceId: UUID, ids: Set<UUID>): Unit = unsupported()
+
+        private fun unsupported(): Nothing = throw UnsupportedOperationException("validation reads existence only")
+    }
+
+    private class FakeRegistry(private val daos: List<ProjectionDAO<out Projection>>) : ProjectionDAORegistry {
+        @Suppress("UNCHECKED_CAST")
+        override fun <D : ProjectionDAO<out Projection>> get(candidateClass: Class<D>): D =
+            candidateClass.cast(daos.single { candidateClass.isInstance(it) })
+
+        override fun <P : Projection> resolve(candidateClass: Class<P>): ProjectionDAO<P> =
+            throw UnsupportedOperationException()
+
+        override fun resolve(target: ProjectionTarget): ProjectionDAO<out Projection> =
+            throw UnsupportedOperationException()
+
+        override fun asList(): List<ProjectionDAO<out Projection>> = daos
+    }
+
+    private fun service(
+        known: Set<Pair<UUID, UUID>> = emptySet(),
+        dao: FakeProjectionDAO = FakeProjectionDAO(known),
+        knownAccounts: Set<Pair<UUID, UUID>> = setOf(WORKSPACE to ACCOUNT, OTHER_WORKSPACE to ACCOUNT),
+        knownCategories: Set<Pair<UUID, UUID>> = setOf(WORKSPACE to CATEGORY, OTHER_WORKSPACE to CATEGORY),
+        accountArchived: Boolean = false,
+        categoryArchived: Boolean = false,
+    ) = dao to OperationValidationServiceImpl(
+        dao,
+        object : TimestampProvider {
 			override fun now(): LocalDateTime = NOW
-		})
+        },
+        FakeRegistry(
+            listOf(
+                FakeAccountDAO(knownAccounts, accountArchived),
+                FakeCategoryDAO(knownCategories, categoryArchived),
+            )
+        ),
+    )
 
 	@Test
 	fun `accepts a back-dated creation`() {
@@ -127,14 +241,130 @@ class OperationValidationServiceTest {
 		assertFailsWith<NotFoundEntityException> { validation.validate(cancel()) }
 	}
 
-	private fun create(occurredAt: LocalDateTime = OCCURRED_AT) =
-		CreateOperationCommand(workspaceId = WORKSPACE, occurredAt = occurredAt, amount = AMOUNT)
+    // ------------------------------------------------------------------ amount (1.16)
+
+    @Test
+    fun `rejects a negative amount`() {
+        val (_, validation) = service()
+
+        // A command carries the magnitude; the kind decides the sign. A negative amount here is a
+        // caller that believes otherwise, and accepting it would flip an expense into income.
+        assertFailsWith<ValidationError> { validation.validate(create(amount = BigDecimal("-1.0000"))) }
+    }
+
+    @Test
+    fun `rejects a zero amount`() {
+        val (_, validation) = service()
+
+        // An operation that moves nothing is not an operation.
+        assertFailsWith<ValidationError> { validation.validate(create(amount = BigDecimal.ZERO)) }
+    }
+
+    // ------------------------------------------------------------------ account (1.16)
+
+    @Test
+    fun `rejects an operation on an account that does not exist`() {
+        val (_, validation) = service(knownAccounts = emptySet())
+
+        assertFailsWith<NotFoundEntityException> { validation.validate(create()) }
+    }
+
+    @Test
+    fun `rejects an operation on an account in another workspace`() {
+        val (_, validation) = service(knownAccounts = setOf(OTHER_WORKSPACE to ACCOUNT))
+
+        // The lookup is workspace-scoped: an account someone else owns must be as invisible as
+        // one that was never created.
+        assertFailsWith<NotFoundEntityException> { validation.validate(create()) }
+    }
+
+    @Test
+    fun `rejects an operation on an archived account`() {
+        val (_, validation) = service(accountArchived = true)
+
+        // §4.8: archiving is what stands in for deleting an account, so it has to close the
+        // write path — otherwise "archived" means nothing.
+        assertFailsWith<ActionConflictException> { validation.validate(create()) }
+    }
+
+    // ------------------------------------------------------------------ category (1.16)
+
+    @Test
+    fun `rejects an operation filed under a category that does not exist`() {
+        val (_, validation) = service(knownCategories = emptySet())
+
+        assertFailsWith<NotFoundEntityException> { validation.validate(create()) }
+    }
+
+    @Test
+    fun `rejects an operation filed under a category in another workspace`() {
+        val (_, validation) = service(knownCategories = setOf(OTHER_WORKSPACE to CATEGORY))
+
+        assertFailsWith<NotFoundEntityException> { validation.validate(create()) }
+    }
+
+    @Test
+    fun `rejects an operation filed under an archived category`() {
+        val (_, validation) = service(categoryArchived = true)
+
+        assertFailsWith<ActionConflictException> { validation.validate(create()) }
+    }
+
+    @Test
+    fun `rejects an income filed under an expense category`() {
+        val (_, validation) = service()
+
+        // The fake's categories are all EXPENSE. Filing income there would make the category tree
+        // disagree with the ledger, and every breakdown built on it would double-count (§4.7).
+        assertFailsWith<ActionConflictException> { validation.validate(create(kind = OperationKind.INCOME)) }
+    }
+
+    @Test
+    fun `rejects a transfer written as an ordinary operation`() {
+        val (_, validation) = service()
+
+        // A transfer is a pair, and the pair is the invariant (§4.5). A leg made here would have
+        // no counterpart, which no rebuild can repair — /transfers is the only way in.
+        assertFailsWith<ActionConflictException> { validation.validate(create(kind = OperationKind.TRANSFER)) }
+    }
+
+    @Test
+    fun `accepts a creation with no category at all`() {
+        val (_, validation) = service(knownCategories = emptySet())
+
+        // A null category is not a missing one: the handler resolves it to the branch's Others
+        // (§5.1), so validation must not reject it — and must not go looking for it either, which
+        // is what the empty known-set here proves.
+        validation.validate(create(categoryId = null))
+    }
+
+    private fun create(
+        occurredAt: LocalDateTime = OCCURRED_AT,
+        amount: BigDecimal = AMOUNT,
+        categoryId: UUID? = CATEGORY,
+        kind: OperationKind = OperationKind.EXPENSE,
+    ) = CreateOperationCommand(
+        workspaceId = WORKSPACE,
+        occurredAt = occurredAt,
+        amount = amount,
+        accountId = ACCOUNT,
+        kind = kind,
+        categoryId = categoryId,
+        comment = null,
+    )
 
 	private fun revise(
 		workspaceId: UUID = WORKSPACE,
 		occurredAt: LocalDateTime = OCCURRED_AT,
 	) = ReviseOperationCommand(
-		workspaceId = workspaceId, operationId = OPERATION, occurredAt = occurredAt, amount = AMOUNT,
+        workspaceId = workspaceId,
+        operationId = OPERATION,
+        occurredAt = occurredAt,
+        amount = AMOUNT,
+        accountId = ACCOUNT,
+        kind = OperationKind.EXPENSE,
+        categoryId = CATEGORY,
+        comment = null,
 	)
 
 	private fun cancel(workspaceId: UUID = WORKSPACE) =
@@ -146,6 +376,10 @@ class OperationValidationServiceTest {
 		val OPERATION: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-456789abcdef")
 		val NOW: LocalDateTime = LocalDateTime.parse("2026-03-16T09:00:00")
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
-		val AMOUNT: BigDecimal = BigDecimal("-1234.5600")
+        val ACCOUNT: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000aaaa")
+        val CATEGORY: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000bbbb")
+
+        // A command carries the magnitude; the handler applies the sign (§4.13).
+        val AMOUNT: BigDecimal = BigDecimal("1234.5600")
 	}
 }

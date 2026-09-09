@@ -3,16 +3,19 @@ package com.github.melancholic.fintrace.core.api.v1.mapper
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationResponse
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import org.mapstruct.Mapper
+import org.mapstruct.Mapping
+import org.mapstruct.Named
+import java.math.BigDecimal
 
-/**
- * Projection row → API response.
- *
- * `workspaceId` is deliberately absent from the response: it is already in the request path,
- * and every target property is mapped by name, so the generated implementation needs no
- * explicit `@Mapping`.
- */
 @Mapper(componentModel = "spring")
 interface OperationMapper {
+
+	@Mapping(source = "amount", target = "amount", qualifiedByName = ["signedToUnsignedAmount"])
 	fun toResponse(projection: OperationProjection): OperationResponse
+
+	@Mapping(source = "amount", target = "amount", qualifiedByName = ["signedToUnsignedAmount"])
 	fun toResponseList(projections: List<OperationProjection>): List<OperationResponse>
+
+	@Named("signedToUnsignedAmount")
+	fun signedToUnsignedAmount(amount: BigDecimal): BigDecimal = amount.abs()
 }

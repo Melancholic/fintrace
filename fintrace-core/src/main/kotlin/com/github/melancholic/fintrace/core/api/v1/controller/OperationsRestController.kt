@@ -1,7 +1,8 @@
 package com.github.melancholic.fintrace.core.api.v1.controller
 
-import com.github.melancholic.fintrace.core.api.v1.dto.OperationRequest
+import com.github.melancholic.fintrace.core.api.v1.dto.CreateOperationRequest
 import com.github.melancholic.fintrace.core.api.v1.dto.OperationResponse
+import com.github.melancholic.fintrace.core.api.v1.dto.UpdateOperationRequest
 import com.github.melancholic.fintrace.core.api.v1.mapper.OperationMapper
 import com.github.melancholic.fintrace.core.config.OPERATIONS_AREA_API_PATH
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
@@ -38,13 +39,17 @@ class OperationsRestController(
     @PostMapping
     fun createNewOperation(
         @PathVariable("workspaceId") workspaceId: UUID,
-        @Valid @RequestBody request: OperationRequest
+        @Valid @RequestBody request: CreateOperationRequest
     ): ResponseEntity<OperationResponse> {
         val projection: OperationProjection = commandFacade.processCommand(
             CreateOperationCommand(
-                workspaceId,
-                request.occurredAt,
-                request.amount,
+                workspaceId = workspaceId,
+                occurredAt = request.occurredAt,
+                accountId = request.accountId,
+                amount = request.amount,
+                kind = request.kind,
+                categoryId = request.categoryId,
+                comment = request.comment
             )
         )
 
@@ -87,14 +92,18 @@ class OperationsRestController(
     fun reviseOperation(
         @PathVariable("workspaceId") workspaceId: UUID,
         @PathVariable("operationId") operationId: UUID,
-        @Valid @RequestBody request: OperationRequest
+        @Valid @RequestBody request: UpdateOperationRequest
     ): ResponseEntity<OperationResponse> {
         val projection = commandFacade.processCommand(
             ReviseOperationCommand(
                 workspaceId = workspaceId,
                 operationId = operationId,
                 occurredAt = request.occurredAt,
-                amount = request.amount
+                accountId = request.accountId,
+                amount = request.amount,
+                kind = request.kind,
+                categoryId = request.categoryId,
+                comment = request.comment
             )
         )
 

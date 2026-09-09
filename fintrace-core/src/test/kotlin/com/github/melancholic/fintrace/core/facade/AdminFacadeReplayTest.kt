@@ -4,8 +4,11 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.*
 import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.service.WorkspaceService
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -39,9 +42,30 @@ class AdminFacadeReplayTest(
 	@Autowired private val usersDAO: UsersDAO,
     @Autowired private val workspaceService: WorkspaceService,
     @Autowired private val transactions: TransactionTemplate,
+    @Autowired private val accountDAO: AccountProjectionDAO,
+    @Autowired private val categoryDAO: CategoryProjectionDAO,
 ) {
 
 	private lateinit var workspace: UUID
+
+    /**
+     * An operation command needs an existing account and category (1.16), so each workspace gets a
+     * pair written straight to their projections — no event, so the absolute event counts these
+     * tests assert stay meaningful.
+     *
+     * Nothing in the log describes them, so a rebuild does not reproduce them; [accounts] and
+     * [categories] leave them out of what they return for exactly that reason.
+     */
+    private val fixtures = mutableMapOf<UUID, Pair<UUID, UUID>>()
+
+    private fun fixtureOf(workspaceId: UUID): Pair<UUID, UUID> = fixtures.getOrPut(workspaceId) {
+        TestWorkspaces.seedAccount(accountDAO, workspaceId) to
+                TestWorkspaces.seedCategory(categoryDAO, workspaceId)
+    }
+
+    private fun seededAccountOf(workspaceId: UUID) = fixtureOf(workspaceId).first
+
+    private fun seededCategoryOf(workspaceId: UUID) = fixtureOf(workspaceId).second
 
 	@BeforeEach
 	fun clean() {
@@ -125,6 +149,8 @@ class AdminFacadeReplayTest(
 			ReviseOperationCommand(
 				workspaceId = workspace, operationId = id,
 				occurredAt = OCCURRED_AT, amount = BigDecimal("777.0000"),
+                accountId = seededAccountOf(workspace), kind = OperationKind.EXPENSE,
+                categoryId = seededCategoryOf(workspace), comment = null,
 			)
 		)
 		val before = operations(workspace)
@@ -136,7 +162,7 @@ class AdminFacadeReplayTest(
 		// if applying an event is an upsert rather than an insert.
 		assertEquals(before, operations(workspace))
 		assertEquals(1, operations(workspace).size)
-		assertEquals(BigDecimal("777.0000"), operations(workspace).single().amount)
+        assertEquals(BigDecimal("-777.0000"), operations(workspace).single().amount, "an EXPENSE rebuilds signed")
 	}
 
 	@Test
@@ -163,6 +189,8 @@ class AdminFacadeReplayTest(
 			ReviseOperationCommand(
 				workspaceId = workspace, operationId = revised,
 				occurredAt = BACK_DATED, amount = BigDecimal("11.0000"),
+                accountId = seededAccountOf(workspace), kind = OperationKind.EXPENSE,
+                categoryId = seededCategoryOf(workspace), comment = null,
 			)
 		)
 		commandFacade.processCommand(
@@ -294,11 +322,12 @@ class AdminFacadeReplayTest(
 
 	@Test
 	fun `preserves amount and timestamps exactly`() {
-		create(amount = "-1234.5600", occurredAt = BACK_DATED)
+        create(amount = "1234.5600", occurredAt = BACK_DATED)
 
 		adminFacade.replayWorkspace(workspace)
 
 		val row = operations(workspace).single()
+        // Stored signed, so the rebuild has to reproduce the sign, not re-derive it.
 		assertEquals(BigDecimal("-1234.5600"), row.amount)
 		assertEquals(4, row.amount.scale())
 		assertEquals(BACK_DATED, row.occurredAt)
@@ -308,8 +337,18 @@ class AdminFacadeReplayTest(
 		workspaceId: UUID = workspace,
 		amount: String = "100.0000",
 		occurredAt: LocalDateTime = OCCURRED_AT,
+        accountId: UUID = seededAccountOf(workspaceId),
+        categoryId: UUID? = seededCategoryOf(workspaceId),
     ): UUID = commandFacade.processCommand(
-		CreateOperationCommand(workspaceId, occurredAt, BigDecimal(amount))
+        CreateOperationCommand(
+            workspaceId = workspaceId,
+            occurredAt = occurredAt,
+            amount = BigDecimal(amount),
+            accountId = accountId,
+            kind = OperationKind.EXPENSE,
+            categoryId = categoryId,
+            comment = null,
+        )
     ).id
 
 	private fun createAccount(
@@ -350,6 +389,7 @@ class AdminFacadeReplayTest(
             )
         }
         .list()
+        .filterNot { it.id == fixtures[workspaceId]?.second }
 
 	private fun accounts(workspaceId: UUID): List<AccountRow> = jdbc
 		.sql(
@@ -371,11 +411,13 @@ class AdminFacadeReplayTest(
 			)
 		}
 		.list()
+        .filterNot { it.id == fixtures[workspaceId]?.first }
 
 	private fun operations(workspaceId: UUID): List<Row> = jdbc
 		.sql(
 			"""
-			SELECT id, workspace_id, amount, occurred_at, recorded_at
+			SELECT id, workspace_id, amount, kind, account_id, category_id, transfer_id,
+			       counterpart_id, comment, external_ref, occurred_at, recorded_at
 			FROM t_operations WHERE workspace_id = :ws ORDER BY id
 			"""
 		)
@@ -385,6 +427,13 @@ class AdminFacadeReplayTest(
 				id = rs.getObject("id", UUID::class.java),
 				workspaceId = rs.getObject("workspace_id", UUID::class.java),
 				amount = rs.getBigDecimal("amount"),
+                kind = rs.getString("kind"),
+                accountId = rs.getObject("account_id", UUID::class.java),
+                categoryId = rs.getObject("category_id", UUID::class.java),
+                transferId = rs.getObject("transfer_id", UUID::class.java),
+                counterpartId = rs.getObject("counterpart_id", UUID::class.java),
+                comment = rs.getString("comment"),
+                externalRef = rs.getString("external_ref"),
 				occurredAt = rs.getObject("occurred_at", LocalDateTime::class.java),
 				recordedAt = rs.getObject("recorded_at", LocalDateTime::class.java),
 			)
@@ -420,6 +469,13 @@ class AdminFacadeReplayTest(
 		val id: UUID,
 		val workspaceId: UUID,
 		val amount: BigDecimal,
+        val kind: String,
+        val accountId: UUID,
+        val categoryId: UUID?,
+        val transferId: UUID?,
+        val counterpartId: UUID?,
+        val comment: String?,
+        val externalRef: String?,
 		val occurredAt: LocalDateTime,
 		val recordedAt: LocalDateTime,
 	)

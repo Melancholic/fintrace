@@ -10,8 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `fintrace-core` runs four areas end to end — workspaces, operations, accounts and categories —
 each through `CommandFacade.processCommand` → dispatcher → handler → event + projection, in one
 transaction, with REST on top; and `POST /admin/api/v1/workspaces/{id}/replay` clears the
-projection and rebuilds it from the event log. Only Core exists — the importer, BFF and web are
-later milestones.
+projection and rebuilds it from the event log. An operation now names an account and a category,
+and the rules tying the three together are checked at command time (1.16). Transfers and anchors
+are the remaining M1 aggregates. Only Core exists — the importer, BFF and web are later
+milestones.
 
 **`docs/status.md` is the live progress record** — what is done, what is next, and the known
 gaps. Read it first; it is regenerated whenever the status is reviewed, and it is the one file
@@ -28,7 +30,7 @@ explicitly, `@Transactional(MANDATORY)` so it cannot be called from outside a tr
 (SQL, returns row counts rather than asserting). Validation services live beside the services and
 hold rules that must also hold for the CLI and the importer.
 
-Verify with `./gradlew clean test` (242 tests). Prefer `clean` — incremental builds have twice
+Verify with `./gradlew clean test`. Prefer `clean` — incremental builds have twice
 masked a genuine compile error in the test sources.
 
 **Workspace ownership is enforced now** — `owner_id`, plus `requireWritable` on the command path
@@ -150,8 +152,16 @@ Single `t_events` table for all aggregate types — splitting buys nothing at th
 costs global ordering.
 
 **Database naming convention (§4.13.1):** `t_` tables, `v_` views, `idx_` indexes. M1 adds
-`t_workspaces`, `t_accounts`, `t_categories`, `t_anchors`. Kotlin names stay unprefixed
-(`OperationProjection`, not `TOperation`).
+`t_workspaces`, `t_accounts`, `t_categories`, `t_anchors` (`t_anchors` still to come). Kotlin
+names stay unprefixed (`OperationProjection`, not `TOperation`).
+
+**A payload class is immutable once written — with one spent exception.** `OperationCreatedV1`
+and the category payloads were edited in place during M1 (`plans/M1.md:333`): the M0 shapes
+described an operation with no account and a category with no code, shapes that never described
+a real fact, and nothing outside development had them on disk. **That licence expires at M2**;
+from the first real import, a shape change means a `…V2` beside the old class. Any development
+database predating those edits, the Compose volume included, must be dropped — its stored
+payloads cannot be read by the edited classes.
 
 **UUIDv7 for every entity, generated in code, not by the database.** The reason is
 rebuildability: a database-assigned id would force insert-then-event ordering, and a rebuild would assign
@@ -213,10 +223,20 @@ whole import.
   balance and changes no computed figure — the remedy for a stale balance is an anchor at zero;
   writes to an archived account are rejected at command time.
 - **Categories** are an adjacency-list tree of unlimited depth. Four immutable system
-  categories (INCOME/EXPENSE roots and both `Others`) are seeded with the workspace. Moves stay
+  categories (INCOME/EXPENSE roots and both `Others`) are seeded with the workspace, each
+  carrying a `system_code` — `INCOME_ROOT` / `INCOME_OTHERS` / `EXPENSE_ROOT` / `EXPENSE_OTHERS`,
+  null for every user category, unique per workspace. **Identify them by that code, never by
+  name**: nothing stops a user creating their own category called "Others". Moves stay
   within the same branch (crossing branches would rewrite the meaning of historical
   operations), `Others` stays a leaf, and the move command must check the target is not a
   descendant.
+- **An operation's `amount` is absolute on the wire and signed in the database.** The request
+  carries a magnitude plus a `kind`, and the handler applies the sign — in the handler rather
+  than the mapper, because the CLI and the importer build commands directly. The response is
+  absolute again, so a client can read an operation and write it straight back. An operation's
+  kind must match its category's, and a null category resolves to that branch's `Others` **at
+  command time**, so the event names the category it chose. `kind = TRANSFER` is rejected on
+  `/operations`: a leg with no counterpart is a half-transfer no rebuild can repair.
 - **Statistics exclude transfers** via `kind <> 'TRANSFER'`.
 
 ### Temporal model

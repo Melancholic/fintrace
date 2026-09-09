@@ -1012,6 +1012,15 @@ through the same surface (§10.3).
 Transfer-only columns are null for ordinary operations. Accepted: the alternative — a separate
 transfers table — contradicts reading everything through `/operations`.
 
+> **Clarified at M1 (1.16).** "Signed" describes the *column*, not the API. A request carries an
+> absolute amount plus `kind`, anything not strictly positive is rejected, and the sign is
+> applied on the way to the event — so the wire stays symmetric and a client can read an
+> operation and write it straight back. Where the conversion lives matters: in the handler, not
+> the mapper, because the CLI and the importer build commands directly and would bypass anything
+> in the web layer. For a transfer leg the sign comes from the leg's direction rather than from
+> `kind` — both legs are `TRANSFER`, one negative and one positive — so the conversion cannot be
+> keyed on `kind` alone once 1.18 lands.
+
 **`anchors`** — `account_id`, `value`, `occurred_at`, `recorded_at`.
 
 **`accounts`** — `name`, `currency`, `icon`, `archived`. No stored balance (§4.6).
@@ -1026,6 +1035,15 @@ external IdP (§7.4), carrying `external_id`, `username` and nothing role-shaped
 **`categories`** — `name`, `icon`, `parent_id`, `kind`, `deleted`, `system`.
 `kind` is derivable from the branch but stored anyway — cheaper than walking to the root on
 every query. `system` protects the roots and both `Others` from modification.
+
+> **Revised at M1 (1.11/1.16).** The `system` boolean is a nullable `system_code` instead:
+> `INCOME_ROOT`, `INCOME_OTHERS`, `EXPENSE_ROOT`, `EXPENSE_OTHERS`, null for every user
+> category, with a partial unique index on `(workspace_id, system_code)`. Two reasons. A boolean
+> cannot tell a root from an `Others`, so code that needed one of them fell back to matching the
+> *name* — and a user may create their own category called "Others", which that check then
+> refused to nest anything under. And resolving an uncategorised operation to its branch's
+> `Others` (§5.1) needs a lookup that can return exactly one row; the unique index makes that a
+> schema guarantee rather than a hope. `system_code IS NOT NULL` now means what `system` meant.
 
 Every table carries `workspace_id`, as a real foreign key to `t_workspaces(id)` with
 `ON DELETE CASCADE` — an existence guard, and what lets the retention job (§4.1.1) reclaim a

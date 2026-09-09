@@ -13,7 +13,7 @@ interface AccountProjectionDAO : ProjectionDAO<AccountProjection> {
     override fun supportedClass() = AccountProjection::class.java
 
     override fun createOrUpdate(projection: AccountProjection): UUID
-    fun getById(workspaceId: UUID, accountId: UUID): AccountProjection
+    override fun getById(workspaceId: UUID, accountId: UUID): AccountProjection
     fun remove(workspaceId: UUID, accountId: UUID)
     fun exists(workspaceId: UUID, accountId: UUID): Boolean
     fun getAllAccounts(workspaceId: UUID, includeArchived: Boolean): List<AccountProjection>

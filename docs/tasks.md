@@ -83,7 +83,10 @@ events, and the projection rows are identical.
 ### Categories
 
 - [x] ~~**1.11** Migration: `parent_id`, `kind`, `archived`, `system`, `icon`~~ — `archived`, not
-  `deleted`: categories are archived and restorable, like accounts (§4.7)
+  `deleted`: categories are archived and restorable, like accounts (§4.7). The `system` boolean
+  became a nullable `system_code` (`INCOME_ROOT` / `INCOME_OTHERS` / `EXPENSE_ROOT` /
+  `EXPENSE_OTHERS`) with a partial unique index: a boolean cannot tell a root from an `Others`,
+  and identifying `Others` by *name* wrongly rejected a user category called "Others"
 - [x] ~~**1.12** Recursive descendants query (`WITH RECURSIVE`) as a reusable component —
   needed by both statistics and the UI tree~~ — `findSubtreeIds`, root included, `UNION` so a
   cycle terminates
@@ -99,7 +102,15 @@ events, and the projection rows are identical.
 
 ### Operations, transfers, anchors
 
-- [ ] **1.16** Extend `operations` projection with the full field set (§4.13)
+- [x] ~~**1.16** Extend `operations` projection with the full field set (§4.13)~~ — `V0008` adds
+  `kind`, `account_id`, `category_id`, `transfer_id`, `counterpart_id`, `comment`,
+  `external_ref` plus §4.14's three indexes. Cross-aggregate validation lands here: the
+  account and the category must exist in this workspace and not be archived, and the
+  category's kind must match the operation's. **The API carries an absolute amount both
+  ways** and the kind decides the sign, applied in the handler so the CLI and importer
+  cannot bypass it. A null category resolves to the branch's `Others` at command time, so
+  the event names the category it chose. `kind = TRANSFER` is rejected here — legs are
+  written through `/transfers` (1.20)
 - [x] ~~**1.17** Operation revise and cancel commands; cancelled disappears from listings (§10.2)~~
       — done ahead of order, with `PUT` / `DELETE` endpoints and command-time validation
       (operation exists in this workspace; `occurredAt` not in the future).

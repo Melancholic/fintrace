@@ -1,5 +1,7 @@
 package com.github.melancholic.fintrace.core.dao.projection
 
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.entity.CategorySystemCode
 import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
 import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
@@ -13,12 +15,14 @@ interface CategoryProjectionDAO : ProjectionDAO<CategoryProjection> {
     override fun supportedClass() = CategoryProjection::class.java
 
     override fun createOrUpdate(projection: CategoryProjection): UUID
-    fun getById(workspaceId: UUID, categoryId: UUID): CategoryProjection
+    override fun getById(workspaceId: UUID, categoryId: UUID): CategoryProjection
     fun getByIdAsOptional(workspaceId: UUID, categoryId: UUID): Optional<CategoryProjection>
     fun remove(workspaceId: UUID, categoryId: UUID)
     fun exists(workspaceId: UUID, categoryId: UUID): Boolean
     fun getAllCategories(workspaceId: UUID, includeArchived: Boolean): List<CategoryProjection>
     fun findSubtreeIds(workspaceId: UUID, categoryId: UUID): List<UUID>
+    fun getFallbackCategory(workspaceId: UUID, categoryKind: CategoryKind): CategoryProjection
+    fun getBySystemCode(workspaceId: UUID, systemCode: CategorySystemCode): CategoryProjection
 }
 
 
@@ -87,6 +91,23 @@ class CategoryProjectionDAOImpl(
         .query(UUID::class.java)
         .list() as List<UUID>
 
+    override fun getFallbackCategory(
+        workspaceId: UUID,
+        categoryKind: CategoryKind
+    ): CategoryProjection = when (categoryKind) {
+        CategoryKind.INCOME -> getBySystemCode(workspaceId, CategorySystemCode.INCOME_OTHERS)
+        CategoryKind.EXPENSE -> getBySystemCode(workspaceId, CategorySystemCode.EXPENSE_OTHERS)
+    }
+
+    override fun getBySystemCode(
+        workspaceId: UUID,
+        systemCode: CategorySystemCode
+    ): CategoryProjection = jdbc.sql(SELECT_BY_SYS_CODE)
+        .param("workspaceId", workspaceId)
+        .param("systemCode", systemCode.name)
+        .query(CategoryProjection::class.java)
+        .single()
+
     override fun removeAll(workspaceId: UUID) {
         jdbc.sql(DELETE_BY_WORKSPACE).param("workspaceId", workspaceId).update()
     }
@@ -119,6 +140,10 @@ class CategoryProjectionDAOImpl(
 
         const val SELECT_BY_ID = SELECT_ALL + """
             AND id = :id
+        """
+
+        const val SELECT_BY_SYS_CODE = SELECT_ALL + """
+            AND system_code = :systemCode
         """
 
         const val CHECK_EXISTS = """

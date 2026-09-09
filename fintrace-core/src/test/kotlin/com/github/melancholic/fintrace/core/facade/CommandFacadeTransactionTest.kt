@@ -4,8 +4,11 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -37,9 +40,13 @@ class CommandFacadeTransactionTest(
 	@Autowired private val jdbc: JdbcClient,
 	@Autowired private val workspaceDAO: WorkspaceDAO,
 	@Autowired private val usersDAO: UsersDAO,
+	@Autowired private val accountDAO: AccountProjectionDAO,
+	@Autowired private val categoryDAO: CategoryProjectionDAO,
 ) {
 
 	private lateinit var workspaceId: UUID
+	private lateinit var accountId: UUID
+	private lateinit var categoryId: UUID
 
 	class ProjectionFailed : RuntimeException("projection write failed")
 
@@ -69,6 +76,8 @@ class CommandFacadeTransactionTest(
 	fun clean() {
 		TestWorkspaces.reset(jdbc)
 		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
+		accountId = TestWorkspaces.seedAccount(accountDAO, workspaceId)
+		categoryId = TestWorkspaces.seedCategory(categoryDAO, workspaceId)
 	}
 
 	@Test
@@ -76,9 +85,13 @@ class CommandFacadeTransactionTest(
 		assertFailsWith<ProjectionFailed> {
 			facade.processCommand(
 				CreateOperationCommand(
-					workspaceId,
-					LocalDateTime.parse("2026-03-15T14:30:00"),
-					BigDecimal("100.0000"),
+					workspaceId = workspaceId,
+					occurredAt = LocalDateTime.parse("2026-03-15T14:30:00"),
+					amount = BigDecimal("100.0000"),
+					accountId = accountId,
+					kind = OperationKind.EXPENSE,
+					categoryId = categoryId,
+					comment = null,
 				)
 			)
 		}

@@ -98,4 +98,6 @@ internal object HandlerFixtures {
 	val OPERATION: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-456789abcdef")
 	val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
 	val RECORDED_AT: LocalDateTime = LocalDateTime.parse("2026-03-16T09:00:00")
+	val ACCOUNT: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000aaaa")
+	val CATEGORY: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000bbbb")
 }

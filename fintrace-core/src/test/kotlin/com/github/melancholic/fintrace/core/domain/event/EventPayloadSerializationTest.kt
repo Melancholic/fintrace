@@ -1,5 +1,6 @@
 package com.github.melancholic.fintrace.core.domain.event
 
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCanceledV1
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
@@ -21,19 +22,33 @@ import kotlin.test.assertEquals
 class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper) {
 
 	private val payload = OperationCreatedV1(
-		id = OPERATION_ID,
-		workspaceId = WORKSPACE_ID,
-		amount = BigDecimal("-1234.5600"),
-		occurredAt = OCCURRED_AT,
-		recordedAt = RECORDED_AT,
+        id = OPERATION_ID,
+        workspaceId = WORKSPACE_ID,
+        amount = BigDecimal("-1234.5600"),
+        occurredAt = OCCURRED_AT,
+        recordedAt = RECORDED_AT,
+        accountId = ACCOUNT_ID,
+        kind = OperationKind.EXPENSE,
+        categoryId = CATEGORY_ID,
+        transferId = null,
+        counterpartId = null,
+        externalRef = "mok:4711",
+        comment = "groceries",
 	)
 
 	private val revised = OperationRevisedV1(
+        amount = BigDecimal("-99.0000"),
 		id = OPERATION_ID,
 		workspaceId = WORKSPACE_ID,
-		amount = BigDecimal("-99.0000"),
 		occurredAt = OCCURRED_AT,
 		recordedAt = RECORDED_AT,
+        accountId = ACCOUNT_ID,
+        kind = OperationKind.EXPENSE,
+        categoryId = CATEGORY_ID,
+        transferId = null,
+        counterpartId = null,
+        externalRef = null,
+        comment = null,
 	)
 
 	private val canceled = OperationCanceledV1(
@@ -110,5 +125,7 @@ class EventPayloadSerializationTest(@Autowired private val mapper: ObjectMapper)
 		val WORKSPACE_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-000000000001")
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
 		val RECORDED_AT: LocalDateTime = LocalDateTime.parse("2026-03-16T09:00:00")
+        val ACCOUNT_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000aaaa")
+        val CATEGORY_ID: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000bbbb")
 	}
 }

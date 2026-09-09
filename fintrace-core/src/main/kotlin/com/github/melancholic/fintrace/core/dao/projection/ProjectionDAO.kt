@@ -11,4 +11,5 @@ sealed interface ProjectionDAO<P : Projection> {
     fun createOrUpdate(projection: P): UUID
     fun removeAll(workspaceId: UUID)
     fun remove(workspaceId: UUID, ids: Set<UUID>)
+    fun getById(workspaceId: UUID, id: UUID): P
 }

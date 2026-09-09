@@ -4,11 +4,17 @@ import com.github.melancholic.fintrace.core.TestWorkspaces
 import com.github.melancholic.fintrace.core.TestcontainersConfiguration
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.ReviseOperationCommand
+import com.github.melancholic.fintrace.core.domain.entity.CategorySystemCode
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
+import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.service.WorkspaceService
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -20,6 +26,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -42,9 +49,15 @@ class CommandFacadeIntegrationTest(
 	@Autowired private val mapper: ObjectMapper,
 	@Autowired private val workspaceDAO: WorkspaceDAO,
 	@Autowired private val usersDAO: UsersDAO,
+    @Autowired private val accountDAO: AccountProjectionDAO,
+    @Autowired private val categoryDAO: CategoryProjectionDAO,
+    @Autowired private val workspaceService: WorkspaceService,
+    @Autowired private val transactions: TransactionTemplate,
 ) {
 
 	private lateinit var workspaceId: UUID
+    private lateinit var accountId: UUID
+    private lateinit var categoryId: UUID
 
 	@TestConfiguration
 	class FixedClock {
@@ -59,6 +72,8 @@ class CommandFacadeIntegrationTest(
 	fun clean() {
 		TestWorkspaces.reset(jdbc)
 		workspaceId = TestWorkspaces.create(workspaceDAO, usersDAO)
+        accountId = TestWorkspaces.seedAccount(accountDAO, workspaceId)
+        categoryId = TestWorkspaces.seedCategory(categoryDAO, workspaceId)
 	}
 
 	@Test
@@ -79,10 +94,17 @@ class CommandFacadeIntegrationTest(
         assertEquals(returned.id, operation().id, "operations.id")
         assertEquals(returned.id, payload().id, "payload id")
         assertEquals(returned, operation().let {
-            com.github.melancholic.fintrace.core.domain.projection.OperationProjection(
+            OperationProjection(
                 id = it.id,
                 workspaceId = it.workspaceId,
                 amount = it.amount,
+                kind = it.kind,
+                accountId = it.accountId,
+                categoryId = it.categoryId!!,
+                transferId = it.transferId,
+                counterpartId = it.counterpartId,
+                comment = it.comment,
+                externalRef = it.externalRef,
                 occurredAt = it.occurredAt,
                 recordedAt = it.recordedAt,
             )
@@ -137,7 +159,9 @@ class CommandFacadeIntegrationTest(
 
 	@Test
 	fun `preserves the amount exactly, sign and scale included`() {
-		facade.processCommand(command(amount = BigDecimal("-1234.5600")))
+        // The command carries the magnitude and the kind; the sign is applied on the way to the
+        // event, so an EXPENSE is stored negative (§4.13).
+        facade.processCommand(command(amount = BigDecimal("1234.5600")))
 
 		val stored = operation().amount
 		assertEquals(BigDecimal("-1234.5600"), stored)
@@ -173,13 +197,60 @@ class CommandFacadeIntegrationTest(
 	@Test
 	fun `isolates workspaces`() {
 		val other = TestWorkspaces.create(workspaceDAO, usersDAO, name = "other-workspace")
+        // Its own account and category: an operation may only reference entities in its own
+        // workspace, so reusing this workspace's would be rejected — which is the point.
+        val otherAccount = TestWorkspaces.seedAccount(accountDAO, other)
+        val otherCategory = TestWorkspaces.seedCategory(categoryDAO, other)
 
 		facade.processCommand(command())
-		facade.processCommand(command(workspaceId = other))
+        facade.processCommand(
+            command(workspaceId = other, accountId = otherAccount, categoryId = otherCategory)
+        )
 
 		assertEquals(1, countIn(workspaceId))
 		assertEquals(1, countIn(other))
 	}
+
+    @Test
+    fun `files an operation with no category under its branch's Others`() {
+        // Needs the seeded system categories, so this one workspace goes through the service.
+        val seeded = TestWorkspaces.createWithCategories(transactions, workspaceService, usersDAO, name = "seeded")
+        val account = TestWorkspaces.seedAccount(accountDAO, seeded)
+
+        val expense = facade.processCommand(
+            command(workspaceId = seeded, accountId = account, categoryId = null)
+        )
+
+        // Resolved at command time, not at projection time: the event has to name the category it
+        // chose, or a rebuild and the log disagree about what happened (§5.1).
+        assertEquals(
+            systemCategory(seeded, CategorySystemCode.EXPENSE_OTHERS),
+            expense.categoryId,
+            "an uncategorised expense lands in the expense branch's Others",
+        )
+        assertEquals(expense.categoryId, payloadOf(expense.id).categoryId, "the event carries the resolved id")
+    }
+
+    @Test
+    fun `resolves Others per branch, not once for the workspace`() {
+        val seeded = TestWorkspaces.createWithCategories(transactions, workspaceService, usersDAO, name = "seeded")
+        val account = TestWorkspaces.seedAccount(accountDAO, seeded)
+
+        val income = facade.processCommand(
+            CreateOperationCommand(
+                workspaceId = seeded,
+                occurredAt = OCCURRED_AT,
+                amount = BigDecimal("100.0000"),
+                accountId = account,
+                kind = OperationKind.INCOME,
+                categoryId = null,
+                comment = null,
+            )
+        )
+
+        assertEquals(systemCategory(seeded, CategorySystemCode.INCOME_OTHERS), income.categoryId)
+        assertEquals(BigDecimal("100.0000"), income.amount, "an income is stored positive")
+    }
 
 	@Test
 	fun `revises an operation in place`() {
@@ -192,7 +263,7 @@ class CommandFacadeIntegrationTest(
 		assertEquals(2, count("t_events"))
 		assertEquals(1, count("t_operations"))
 		assertEquals(id, operation().id)
-		assertEquals(BigDecimal("250.0000"), operation().amount)
+        assertEquals(BigDecimal("-250.0000"), operation().amount, "an EXPENSE is stored signed")
 	}
 
 	@Test
@@ -256,7 +327,17 @@ class CommandFacadeIntegrationTest(
 		workspaceId: UUID = this.workspaceId,
 		occurredAt: LocalDateTime = OCCURRED_AT,
 		amount: BigDecimal = BigDecimal("100.0000"),
-	) = CreateOperationCommand(workspaceId, occurredAt, amount)
+        accountId: UUID = this.accountId,
+        categoryId: UUID? = this.categoryId,
+    ) = CreateOperationCommand(
+        workspaceId = workspaceId,
+        occurredAt = occurredAt,
+        amount = amount,
+        accountId = accountId,
+        kind = OperationKind.EXPENSE,
+        categoryId = categoryId,
+        comment = null,
+    )
 
 	private fun revise(
 		operationId: UUID,
@@ -264,7 +345,14 @@ class CommandFacadeIntegrationTest(
 		occurredAt: LocalDateTime = OCCURRED_AT,
 		amount: BigDecimal = BigDecimal("200.0000"),
 	) = ReviseOperationCommand(
-		workspaceId = workspaceId, operationId = operationId, occurredAt = occurredAt, amount = amount,
+        workspaceId = workspaceId,
+        operationId = operationId,
+        occurredAt = occurredAt,
+        amount = amount,
+        accountId = accountId,
+        kind = OperationKind.EXPENSE,
+        categoryId = categoryId,
+        comment = null,
 	)
 
 	private fun cancel(
@@ -303,12 +391,25 @@ class CommandFacadeIntegrationTest(
 		.list()
 
 	private fun operation(): OperationRow = jdbc
-		.sql("SELECT id, workspace_id, amount, occurred_at, recorded_at FROM t_operations ORDER BY occurred_at")
+        .sql(
+            """
+			SELECT id, workspace_id, amount, kind, account_id, category_id, transfer_id,
+			       counterpart_id, comment, external_ref, occurred_at, recorded_at
+			FROM t_operations ORDER BY occurred_at
+			"""
+        )
 		.query { rs, _ ->
 			OperationRow(
 				id = rs.getObject("id", UUID::class.java),
 				workspaceId = rs.getObject("workspace_id", UUID::class.java),
 				amount = rs.getBigDecimal("amount"),
+                kind = OperationKind.valueOf(rs.getString("kind")),
+                accountId = rs.getObject("account_id", UUID::class.java),
+                categoryId = rs.getObject("category_id", UUID::class.java),
+                transferId = rs.getObject("transfer_id", UUID::class.java),
+                counterpartId = rs.getObject("counterpart_id", UUID::class.java),
+                comment = rs.getString("comment"),
+                externalRef = rs.getString("external_ref"),
 				occurredAt = rs.getObject("occurred_at", LocalDateTime::class.java),
 				recordedAt = rs.getObject("recorded_at", LocalDateTime::class.java),
 			)
@@ -317,6 +418,17 @@ class CommandFacadeIntegrationTest(
 
 	private fun payload(): EventPayload =
 		assertNotNull(mapper.readValue(events().first().payload, EventPayload::class.java))
+
+    private fun systemCategory(workspaceId: UUID, code: CategorySystemCode): UUID = jdbc
+        .sql("SELECT id FROM t_categories WHERE workspace_id = :ws AND system_code = :code")
+        .param("ws", workspaceId).param("code", code.name)
+        .query(UUID::class.java).single()
+
+    private fun payloadOf(operationId: UUID): OperationCreatedV1 = jdbc
+        .sql("SELECT payload FROM t_events WHERE aggregate_id = :id ORDER BY id DESC LIMIT 1")
+        .param("id", operationId)
+        .query(String::class.java).single()
+        .let { mapper.readValue(it, EventPayload::class.java) as OperationCreatedV1 }
 
 	private data class EventRow(
 		val entityType: String,
@@ -331,6 +443,13 @@ class CommandFacadeIntegrationTest(
 		val id: UUID,
 		val workspaceId: UUID,
 		val amount: BigDecimal,
+        val kind: OperationKind,
+        val accountId: UUID,
+        val categoryId: UUID?,
+        val transferId: UUID?,
+        val counterpartId: UUID?,
+        val comment: String?,
+        val externalRef: String?,
 		val occurredAt: LocalDateTime,
 		val recordedAt: LocalDateTime,
 	)

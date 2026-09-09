@@ -2,6 +2,7 @@ package com.github.melancholic.fintrace.core.service.command
 
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.event.payload.EventPayload
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.service.command.handler.CommandHandler
@@ -68,6 +69,13 @@ class CommandDispatcherTest {
 		id = UUID.randomUUID(),
 		workspaceId = UUID.randomUUID(),
 		amount = BigDecimal("100.0000"),
+        kind = OperationKind.EXPENSE,
+        accountId = UUID.randomUUID(),
+        categoryId = UUID.randomUUID(),
+        transferId = null,
+        counterpartId = null,
+        comment = null,
+        externalRef = null,
 		occurredAt = LocalDateTime.parse("2026-03-15T14:30:00"),
 		recordedAt = LocalDateTime.parse("2026-03-16T09:00:00"),
 	)
@@ -76,5 +84,9 @@ class CommandDispatcherTest {
 		workspaceId = UUID.randomUUID(),
 		occurredAt = LocalDateTime.parse("2026-03-15T14:30:00"),
 		amount = BigDecimal("100.0000"),
+        accountId = UUID.randomUUID(),
+        kind = OperationKind.EXPENSE,
+        categoryId = UUID.randomUUID(),
+        comment = null,
 	)
 }

@@ -13,7 +13,7 @@ interface OperationProjectionDAO : ProjectionDAO<OperationProjection> {
     override fun supportedClass() = OperationProjection::class.java
 
     override fun createOrUpdate(projection: OperationProjection): UUID
-    fun getById(workspaceId: UUID, operationId: UUID): OperationProjection
+    override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection
     fun remove(workspaceId: UUID, id: UUID)
     fun exists(workspaceId: UUID, operationId: UUID): Boolean
 }
@@ -26,6 +26,13 @@ class OperationProjectionDAOImpl(
     override fun createOrUpdate(projection: OperationProjection): UUID {
         return jdbc.sql(INSERT_OR_UPDATE).param("id", projection.id).param("workspaceId", projection.workspaceId)
             .param("amount", projection.amount)
+            .param("kind", projection.kind.name)
+            .param("accountId", projection.accountId)
+            .param("categoryId", projection.categoryId)
+            .param("transferId", projection.transferId)
+            .param("counterpartId", projection.counterpartId)
+            .param("comment", projection.comment)
+            .param("externalRef", projection.externalRef)
             .param("occurredAt", projection.occurredAt)
             .param("recordedAt", projection.recordedAt)
             .query(
@@ -65,18 +72,30 @@ class OperationProjectionDAOImpl(
         const val TABLE_NAME = "t_operations"
 
         const val INSERT_OR_UPDATE = """
-            INSERT INTO $TABLE_NAME (id, workspace_id, amount, occurred_at, recorded_at)
-            VALUES (:id, :workspaceId, :amount, :occurredAt, :recordedAt)
+            INSERT INTO $TABLE_NAME (id, workspace_id, amount, kind, account_id, category_id,
+                                     transfer_id, counterpart_id, comment, external_ref,
+                                     occurred_at, recorded_at)
+            VALUES (:id, :workspaceId, :amount, :kind, :accountId, :categoryId,
+                    :transferId, :counterpartId, :comment, :externalRef,
+                    :occurredAt, :recordedAt)
             ON CONFLICT (id) DO UPDATE SET
-                amount      = EXCLUDED.amount,
-                occurred_at = EXCLUDED.occurred_at,
-                recorded_at = EXCLUDED.recorded_at
+                amount         = EXCLUDED.amount,
+                kind           = EXCLUDED.kind,
+                account_id     = EXCLUDED.account_id,
+                category_id    = EXCLUDED.category_id,
+                transfer_id    = EXCLUDED.transfer_id,
+                counterpart_id = EXCLUDED.counterpart_id,
+                comment        = EXCLUDED.comment,
+                external_ref   = EXCLUDED.external_ref,
+                occurred_at    = EXCLUDED.occurred_at,
+                recorded_at    = EXCLUDED.recorded_at
             WHERE $TABLE_NAME.workspace_id = EXCLUDED.workspace_id
             RETURNING id
         """
 
         const val SELECT = """
-            SELECT id, workspace_id, amount, occurred_at, recorded_at 
+            SELECT id, workspace_id, amount, kind, account_id, category_id, transfer_id,
+                   counterpart_id, comment, external_ref, occurred_at, recorded_at
             from $TABLE_NAME
             WHERE workspace_id = :workspaceId AND id = :id
         """

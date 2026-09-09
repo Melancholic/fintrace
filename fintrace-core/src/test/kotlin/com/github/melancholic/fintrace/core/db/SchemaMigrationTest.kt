@@ -92,6 +92,56 @@ class SchemaMigrationTest(@Autowired private val jdbc: JdbcClient) {
 	}
 
 	@Test
+	fun `operations carry the indexes every read path depends on`() {
+		// §4.14. None of these change a result, so nothing fails if one is dropped — which is
+		// exactly why they need a test rather than a review.
+		val expected = mapOf(
+			"idx_t_operations_workspace_id_occurred_at" to "(workspace_id, occurred_at)",
+			"idx_t_operations_workspace_id_account_id_occurred_at" to "(workspace_id, account_id, occurred_at)",
+			"idx_t_operations_workspace_id_category_id" to "(workspace_id, category_id)",
+		)
+
+		val actual = jdbc.sql("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 't_operations'")
+			.query { rs, _ -> rs.getString("indexname") to rs.getString("indexdef") }
+			.list().toMap()
+
+		expected.forEach { (name, columns) ->
+			val definition = requireNotNull(actual[name]) { "$name is missing; have ${actual.keys}" }
+			assertTrue(definition.contains(columns), "unexpected definition for $name: $definition")
+		}
+	}
+
+	@Test
+	fun `an operation must name a kind and an account`() {
+		// The M0 table described an operation with no account and no category — a shape that
+		// never existed as a real fact. Nullable columns here would let it come back.
+		listOf("kind", "account_id").forEach { column ->
+			val nullable = jdbc.sql(
+				"""
+				SELECT is_nullable FROM information_schema.columns
+				WHERE table_name = 't_operations' AND column_name = :column
+				"""
+			).param("column", column).query(String::class.java).single()
+
+			assertEquals("NO", nullable, "t_operations.$column")
+		}
+	}
+
+	@Test
+	fun `a workspace has exactly one category per system code`() {
+		// What makes resolving a null category to its branch's Others a single unambiguous
+		// lookup (§4.7). A plain index would let a second Others appear and the lookup would
+		// start throwing at write time instead.
+		val definition = jdbc.sql(
+			"SELECT indexdef FROM pg_indexes WHERE tablename = 't_categories' AND indexname = :name"
+		).param("name", "idx_t_categories_workspace_id_system_code").query(String::class.java).optional()
+
+		assertTrue(definition.isPresent, "idx_t_categories_workspace_id_system_code is missing")
+		assertTrue(definition.get().startsWith("CREATE UNIQUE INDEX"), definition.get())
+		assertTrue(definition.get().contains("WHERE (system_code IS NOT NULL)"), definition.get())
+	}
+
+	@Test
 	fun `the event sequence is assigned by the database alone`() {
 		// GENERATED ALWAYS: an INSERT supplying id is rejected outright. events.id is the global
 		// order a rebuild replays by, and nothing in the application may set it.

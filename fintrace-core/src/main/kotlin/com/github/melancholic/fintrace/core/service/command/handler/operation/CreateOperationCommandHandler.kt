@@ -1,6 +1,8 @@
 package com.github.melancholic.fintrace.core.service.command.handler.operation
 
 import com.github.melancholic.fintrace.core.dao.EventsDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.ProjectionDAORegistry
 import com.github.melancholic.fintrace.core.domain.command.CreateOperationCommand
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreated
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCreatedV1
@@ -18,6 +20,7 @@ class CreateOperationCommandHandler(
     private val uuidGenerator: UUIDGenerator,
     private val projectionApplier: ProjectionApplier,
     private val validationService: OperationValidationService,
+    private val projectionDAORegistry: ProjectionDAORegistry,
     eventsDAO: EventsDAO,
 ) : AbstractOperationCommandHandler<CreateOperationCommand, OperationProjection, OperationCreated>(eventsDAO) {
     override val commandType: KClass<out CreateOperationCommand> = CreateOperationCommand::class
@@ -30,12 +33,25 @@ class CreateOperationCommandHandler(
     }
 
     override fun buildEventPayload(command: CreateOperationCommand): OperationCreated {
+        val categoryId = command.categoryId ?: projectionDAORegistry[CategoryProjectionDAO::class.java]
+            .getFallbackCategory(
+                command.workspaceId,
+                command.kind.asCategoryKind()
+            ).id
+
         return OperationCreatedV1(
             id = uuidGenerator.nextUUID(),
             workspaceId = command.workspaceId,
-            amount = command.amount,
+            accountId = command.accountId,
+            amount = command.kind.signedAmount(command.amount),
+            kind = command.kind,
+            categoryId = categoryId,
+            comment = command.comment,
             occurredAt = command.occurredAt,
-            recordedAt = timestampProvider.now()
+            recordedAt = timestampProvider.now(),
+            transferId = null,
+            counterpartId = null,
+            externalRef = null,
         )
     }
 }

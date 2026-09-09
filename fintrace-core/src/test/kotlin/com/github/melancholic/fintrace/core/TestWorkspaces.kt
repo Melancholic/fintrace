@@ -1,12 +1,19 @@
 package com.github.melancholic.fintrace.core
 
+import com.github.melancholic.fintrace.core.TestWorkspaces.create
 import com.github.melancholic.fintrace.core.TestWorkspaces.createWithCategories
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
+import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
+import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.service.WorkspaceService
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
+import java.time.LocalDateTime
 import java.util.*
 
 /**
@@ -72,6 +79,55 @@ internal object TestWorkspaces {
     ): UUID = transactions.execute {
         workspaceService.createWorkspace(ownerId(usersDAO), CreateWorkspaceRequest(name, currency)).id
     }
+
+    /**
+     * An account and a category written **straight to their projections**, with no event behind
+     * them.
+     *
+     * From 1.16 an operation command is rejected unless its account and category exist, so a test
+     * about operations needs both to be there. Creating them through the command path would cost
+     * two events, which breaks every test asserting an absolute count in `t_events` — the reason
+     * [create] exists at all. Going through the DAO keeps the row shape honest without touching
+     * the log.
+     *
+     * A test that replays must not expect these rows to survive: nothing in the log describes
+     * them.
+     */
+    fun seedAccount(
+        accountDAO: AccountProjectionDAO,
+        workspaceId: UUID,
+        name: String = "seeded-account",
+        currency: String = "EUR",
+    ): UUID = accountDAO.createOrUpdate(
+        AccountProjection(
+            id = UUID.randomUUID(),
+            workspaceId = workspaceId,
+            name = name,
+            currency = currency,
+            archived = false,
+            icon = null,
+            recordedAt = LocalDateTime.now(),
+        )
+    )
+
+    fun seedCategory(
+        categoryDAO: CategoryProjectionDAO,
+        workspaceId: UUID,
+        kind: CategoryKind = CategoryKind.EXPENSE,
+        name: String = "seeded-category",
+    ): UUID = categoryDAO.createOrUpdate(
+        CategoryProjection(
+            id = UUID.randomUUID(),
+            workspaceId = workspaceId,
+            parentId = null,
+            name = name,
+            kind = kind,
+            archived = false,
+            systemCode = null,
+            icon = null,
+            recordedAt = LocalDateTime.now(),
+        )
+    )
 
 	fun ownerId(usersDAO: UsersDAO): UUID = usersDAO.getUserIdByExternalId(TEST_SUBJECT)
 		.orElseThrow { IllegalStateException("The stub user seeded by V0004 is missing") }

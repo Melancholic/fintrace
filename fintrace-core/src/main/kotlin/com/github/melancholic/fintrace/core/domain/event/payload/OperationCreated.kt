@@ -1,22 +1,12 @@
 package com.github.melancholic.fintrace.core.domain.event.payload
 
-import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
-import com.github.melancholic.fintrace.core.service.projection.ProjectionChange
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
 
 sealed interface OperationCreated : BalanceOperationEventPayload {
-    override fun projectionChange(): ProjectionChange = ProjectionChange
-        .Upsert(listOf(projection()))
 
-    fun projection(): OperationProjection = OperationProjection(
-        id = id,
-        workspaceId = workspaceId,
-        amount = amount,
-        occurredAt = occurredAt,
-        recordedAt = recordedAt,
-    )
 }
 
 /**
@@ -29,7 +19,14 @@ data class OperationCreatedV1(
     override val amount: BigDecimal,
     override val occurredAt: LocalDateTime,
     override val recordedAt: LocalDateTime,
-    override val version: Int = VERSION,
+    override val accountId: UUID,
+    override val kind: OperationKind,
+    override val categoryId: UUID,
+    override val transferId: UUID?,
+    override val counterpartId: UUID?,
+    override val externalRef: String?,
+    override val comment: String?,
+    override val version: Int = VERSION
 ) : OperationCreated {
 
     companion object {
