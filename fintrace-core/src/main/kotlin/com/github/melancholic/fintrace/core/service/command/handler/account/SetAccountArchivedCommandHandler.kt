@@ -26,12 +26,12 @@ class SetAccountArchivedCommandHandler(
 
     override fun handle(command: SetAccountArchivedCommand): AccountProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as AccountRevised).projection()
     }
 
-    override fun buildEventPayload(command: SetAccountArchivedCommand): AccountRevised {
+    private fun buildEventPayload(command: SetAccountArchivedCommand): AccountRevised {
         val current = currentPayload(command.workspaceId, command.accountId) as? AccountEventPayload
             ?: throw ApplicationException("Latest event for account '${command.accountId}' is not an account payload")
 

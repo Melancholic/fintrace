@@ -26,12 +26,12 @@ class CreateOperationCommandHandler(
 
     override fun handle(command: CreateOperationCommand): OperationProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as OperationCreated).projection()
     }
 
-    override fun buildEventPayload(command: CreateOperationCommand): OperationCreated {
+    private fun buildEventPayload(command: CreateOperationCommand): OperationCreated {
         val categoryId = command.categoryId
             ?: categoryDAO.getFallbackCategory(
                 command.workspaceId,

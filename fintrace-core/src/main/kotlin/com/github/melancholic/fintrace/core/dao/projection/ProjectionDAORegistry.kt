@@ -21,6 +21,7 @@ class ProjectionDAORegistryImpl(
     private val daoByProjectionTargetMap: Map<ProjectionTarget, ProjectionDAO<*>> =
         projectionDAOList.associateBy { it.projectionTarget() }
 
+    @Suppress("UNCHECKED_CAST")
     override fun <P : Projection> resolve(candidateClass: Class<P>): ProjectionDAO<P> {
         return daoByProjectionClassMap[candidateClass] as? ProjectionDAO<P>
             ?: throw IllegalStateException("Projection DAO for ProjectionClass=${candidateClass.javaClass.name} was not found")
@@ -32,14 +33,14 @@ class ProjectionDAORegistryImpl(
             ?: throw IllegalStateException("Projection DAO for ProjectionTarget=${target} was not found")
     }
 
-    override operator fun <D : ProjectionDAO<out Projection>> get(daoClass: Class<D>): D {
-        val matches = projectionDAOList.filter { daoClass.isInstance(it) }
+    override operator fun <D : ProjectionDAO<out Projection>> get(candidateClass: Class<D>): D {
+        val matches = projectionDAOList.filter { candidateClass.isInstance(it) }
 
         return when (matches.size) {
-            1 -> daoClass.cast(matches.single())
-            0 -> throw IllegalStateException("No projection DAO of type ${daoClass.name}")
+            1 -> candidateClass.cast(matches.single())
+            0 -> throw IllegalStateException("No projection DAO of type ${candidateClass.name}")
             else -> throw IllegalStateException(
-                "${matches.size} projection DAOs match ${daoClass.name}: " +
+                "${matches.size} projection DAOs match ${candidateClass.name}: " +
                         matches.joinToString { it::class.java.name }
             )
         }

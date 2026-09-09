@@ -78,6 +78,7 @@ class WorkspaceDAOImpl(
             .optional()
     }
 
+    @Suppress("UNCHECKED_CAST")
     override fun search(
         userId: UUID,
         page: Pageable

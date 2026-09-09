@@ -13,10 +13,6 @@ abstract class AbstractCommandHandler<C : Command<R>, R, P : EventPayload>(
 
     abstract val entityType: EntityType
 
-    abstract fun buildEventPayload(command: C): P
-
-    protected fun registerEvent(command: C) = registerEvent(command, buildEventPayload(command))
-
     protected fun registerEvent(command: C, payload: P) = eventsDAO.registerEvent(
         workspaceId = command.workspaceId,
         payload = payload,

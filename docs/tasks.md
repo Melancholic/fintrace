@@ -124,8 +124,11 @@ events, and the projection rows are identical.
       (§4.4)
 - [ ] **1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing
       `transfer_id`, each pointing at the other via `counterpart_id`
-- [ ] **1.19** Reject `PUT /operations/{id}` on a transfer leg (§10.3)
-- [ ] **1.20** `/transfers` write endpoints; transfer legs readable via `/operations`
+- [ ] **1.19** Reject `PUT` **and `DELETE`** `/operations/{id}` on a transfer leg (§10.3) — 409,
+  naming the `transfer_id`. `DELETE` is included because cancelling one leg leaves the
+  half-transfer this task exists to prevent
+- [ ] **1.20** `/transfers` write endpoints, plus `GET /transfers/{id}` so a client can load the
+  pair; transfer legs readable via `/operations`
 - [ ] **1.21** Migration + projection: `anchors`
 - [ ] **1.22** Anchor create; reject back-dating (§4.6)
 - [ ] **1.23** Anchor delete: only the most recent for that account

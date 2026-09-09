@@ -26,12 +26,12 @@ class ReviseAccountCommandHandler(
 
     override fun handle(command: ReviseAccountCommand): AccountProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as AccountRevised).projection()
     }
 
-    override fun buildEventPayload(command: ReviseAccountCommand): AccountRevised {
+    private fun buildEventPayload(command: ReviseAccountCommand): AccountRevised {
         val current = currentPayload(command.workspaceId, command.accountId) as? AccountEventPayload
             ?: throw ApplicationException("Latest event for account '${command.accountId}' is not an account payload")
 

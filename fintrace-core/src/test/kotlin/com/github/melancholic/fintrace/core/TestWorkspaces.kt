@@ -2,17 +2,22 @@ package com.github.melancholic.fintrace.core
 
 import com.github.melancholic.fintrace.core.TestWorkspaces.create
 import com.github.melancholic.fintrace.core.TestWorkspaces.createWithCategories
+import com.github.melancholic.fintrace.core.TestWorkspaces.seedAccount
 import com.github.melancholic.fintrace.core.api.v1.dto.CreateWorkspaceRequest
 import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
+import com.github.melancholic.fintrace.core.domain.entity.OperationKind
 import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
 import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
+import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.service.WorkspaceService
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.*
 
@@ -128,6 +133,50 @@ internal object TestWorkspaces {
             recordedAt = LocalDateTime.now(),
         )
     )
+
+    /**
+     * A transfer's two legs, written straight to the projection: one `transfer_id`, each leg's
+     * `counterpart_id` pointing at the other, the outgoing amount negative (§4.5).
+     *
+     * The transfer command (1.18) does not exist yet, so this is the only way to produce a row
+     * carrying a `transfer_id` — which is what 1.19's guard keys off. Like [seedAccount] there is
+     * no event behind these rows, so a replay does not reproduce them.
+     *
+     * A real leg carries no category; the projection cannot say that until `categoryId` becomes
+     * nullable with 1.18, so one is passed here and the guard ignores it.
+     */
+    fun seedTransferPair(
+        operationDAO: OperationProjectionDAO,
+        workspaceId: UUID,
+        fromAccountId: UUID,
+        toAccountId: UUID,
+        categoryId: UUID,
+        amount: BigDecimal = BigDecimal("100.0000"),
+        occurredAt: LocalDateTime = LocalDateTime.now(),
+    ): Pair<UUID, UUID> {
+        val transferId = UUID.randomUUID()
+        val fromId = UUID.randomUUID()
+        val toId = UUID.randomUUID()
+
+        fun leg(id: UUID, counterpartId: UUID, accountId: UUID, signed: BigDecimal) = OperationProjection(
+            id = id,
+            workspaceId = workspaceId,
+            amount = signed,
+            kind = OperationKind.TRANSFER,
+            accountId = accountId,
+            categoryId = categoryId,
+            transferId = transferId,
+            counterpartId = counterpartId,
+            comment = null,
+            externalRef = null,
+            occurredAt = occurredAt,
+            recordedAt = LocalDateTime.now(),
+        )
+
+        operationDAO.createOrUpdate(leg(fromId, toId, fromAccountId, amount.negate()))
+        operationDAO.createOrUpdate(leg(toId, fromId, toAccountId, amount))
+        return fromId to toId
+    }
 
 	fun ownerId(usersDAO: UsersDAO): UUID = usersDAO.getUserIdByExternalId(TEST_SUBJECT)
 		.orElseThrow { IllegalStateException("The stub user seeded by V0004 is missing") }

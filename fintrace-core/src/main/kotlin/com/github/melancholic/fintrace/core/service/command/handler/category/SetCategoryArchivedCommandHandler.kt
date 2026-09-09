@@ -88,6 +88,6 @@ class SetCategoryArchivedCommandHandler(
         recordedAt = timestampProvider.now()
     )
 
-    override fun buildEventPayload(command: SetCategoryArchivedCommand): CategoryRevised =
+    private fun buildEventPayload(command: SetCategoryArchivedCommand): CategoryRevised =
         payload(currentState(command.workspaceId, command.categoryId), command.archived)
 }

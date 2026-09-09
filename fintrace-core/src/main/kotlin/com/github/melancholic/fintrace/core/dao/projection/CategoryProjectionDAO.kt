@@ -15,10 +15,9 @@ interface CategoryProjectionDAO : ProjectionDAO<CategoryProjection> {
     override fun supportedClass() = CategoryProjection::class.java
 
     override fun createOrUpdate(projection: CategoryProjection): UUID
-    override fun getById(workspaceId: UUID, categoryId: UUID): CategoryProjection
+    override fun getById(workspaceId: UUID, id: UUID): CategoryProjection
     fun getByIdAsOptional(workspaceId: UUID, categoryId: UUID): Optional<CategoryProjection>
     fun remove(workspaceId: UUID, categoryId: UUID)
-    fun exists(workspaceId: UUID, categoryId: UUID): Boolean
     fun getAllCategories(workspaceId: UUID, includeArchived: Boolean): List<CategoryProjection>
     fun findSubtreeIds(workspaceId: UUID, categoryId: UUID): List<UUID>
     fun getFallbackCategory(workspaceId: UUID, categoryKind: CategoryKind): CategoryProjection
@@ -45,10 +44,8 @@ class CategoryProjectionDAOImpl(
             .single()
     }
 
-    override fun getById(
-        workspaceId: UUID, categoryId: UUID
-    ): CategoryProjection = getByIdAsOptional(workspaceId, categoryId)
-        .orElseThrow { NotFoundEntityException("Category not found into workspace (workspaceId='$workspaceId', categoryId='$categoryId')") }
+    override fun getById(workspaceId: UUID, id: UUID): CategoryProjection = getByIdAsOptional(workspaceId, id)
+        .orElseThrow { NotFoundEntityException("Category not found into workspace (workspaceId='$workspaceId', categoryId='$id')") }
 
     override fun getByIdAsOptional(
         workspaceId: UUID,
@@ -58,11 +55,6 @@ class CategoryProjectionDAOImpl(
 
     override fun remove(workspaceId: UUID, categoryId: UUID) {
         remove(workspaceId, setOf(categoryId))
-    }
-
-    override fun exists(workspaceId: UUID, categoryId: UUID): Boolean {
-        return jdbc.sql(CHECK_EXISTS).param("id", categoryId).param("workspaceId", workspaceId)
-            .query(Boolean::class.java).single()
     }
 
     override fun getAllCategories(
@@ -82,6 +74,7 @@ class CategoryProjectionDAOImpl(
             .filterNotNull()
     }
 
+    @Suppress("UNCHECKED_CAST")
     override fun findSubtreeIds(
         workspaceId: UUID,
         categoryId: UUID
@@ -144,10 +137,6 @@ class CategoryProjectionDAOImpl(
 
         const val SELECT_BY_SYS_CODE = SELECT_ALL + """
             AND system_code = :systemCode
-        """
-
-        const val CHECK_EXISTS = """
-            SELECT EXISTS(SELECT 1 FROM $TABLE_NAME WHERE workspace_id = :workspaceId AND id = :id)
         """
 
         const val DELETE_BY_WORKSPACE = """

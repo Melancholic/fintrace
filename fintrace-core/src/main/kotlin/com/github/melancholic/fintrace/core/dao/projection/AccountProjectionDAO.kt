@@ -13,7 +13,7 @@ interface AccountProjectionDAO : ProjectionDAO<AccountProjection> {
     override fun supportedClass() = AccountProjection::class.java
 
     override fun createOrUpdate(projection: AccountProjection): UUID
-    override fun getById(workspaceId: UUID, accountId: UUID): AccountProjection
+    override fun getById(workspaceId: UUID, id: UUID): AccountProjection
     fun remove(workspaceId: UUID, accountId: UUID)
     fun exists(workspaceId: UUID, accountId: UUID): Boolean
     fun getAllAccounts(workspaceId: UUID, includeArchived: Boolean): List<AccountProjection>
@@ -37,12 +37,10 @@ class AccountProjectionDAOImpl(
             .single()
     }
 
-    override fun getById(
-        workspaceId: UUID, accountId: UUID
-    ): AccountProjection {
-        return jdbc.sql(SELECT_BY_ID).param("id", accountId).param("workspaceId", workspaceId)
+    override fun getById(workspaceId: UUID, id: UUID): AccountProjection {
+        return jdbc.sql(SELECT_BY_ID).param("id", id).param("workspaceId", workspaceId)
             .query(AccountProjection::class.java).optional()
-            .orElseThrow { NotFoundEntityException("Account not found into workspace (workspaceId='$workspaceId', accountId='$accountId')") }
+            .orElseThrow { NotFoundEntityException("Account not found into workspace (workspaceId='$workspaceId', accountId='$id')") }
     }
 
     override fun remove(workspaceId: UUID, accountId: UUID) {

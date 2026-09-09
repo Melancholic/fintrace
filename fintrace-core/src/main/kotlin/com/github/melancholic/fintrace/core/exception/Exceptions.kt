@@ -18,7 +18,7 @@ open class ActionConflictException(message: String = "Conflict") : RuntimeExcept
 class OperationNotAllowedException(message: String = "Operation not allowed") : ActionConflictException(message)
 
 @ResponseStatus(value = HttpStatus.CONFLICT)
-class OperationNotSupported(message: String = "Operation not supported") : ActionConflictException(message)
+open class OperationNotSupported(message: String = "Operation not supported") : ActionConflictException(message)
 
 // SECURITY EXCEPTIONS
 @ResponseStatus(value = HttpStatus.UNAUTHORIZED)

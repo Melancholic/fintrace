@@ -1,7 +1,6 @@
 package com.github.melancholic.fintrace.core.service.command.handler.operation
 
 import com.github.melancholic.fintrace.core.dao.EventsDAO
-import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.command.CancelOperationCommand
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCanceled
 import com.github.melancholic.fintrace.core.domain.event.payload.OperationCanceledV1
@@ -24,11 +23,11 @@ class CancelOperationCommandHandler(
 
     override fun handle(command: CancelOperationCommand) {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
     }
 
-    override fun buildEventPayload(command: CancelOperationCommand): OperationCanceled {
+    private fun buildEventPayload(command: CancelOperationCommand): OperationCanceled {
         return OperationCanceledV1(
             id = command.operationId,
             workspaceId = command.workspaceId,

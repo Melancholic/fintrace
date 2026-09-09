@@ -24,12 +24,12 @@ class CreateAccountCommandHandler(
 
     override fun handle(command: CreateAccountCommand): AccountProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as AccountCreated).projection()
     }
 
-    override fun buildEventPayload(command: CreateAccountCommand): AccountCreated {
+    private fun buildEventPayload(command: CreateAccountCommand): AccountCreated {
         return AccountCreatedV1(
             id = uuidGenerator.nextUUID(),
             workspaceId = command.workspaceId,

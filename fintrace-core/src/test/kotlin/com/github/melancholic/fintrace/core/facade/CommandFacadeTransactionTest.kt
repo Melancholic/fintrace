@@ -61,14 +61,14 @@ class CommandFacadeTransactionTest(
 			override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection =
 				throw UnsupportedOperationException()
 
+			override fun getByIdAsOptional(workspaceId: UUID, operationId: UUID): Optional<OperationProjection> =
+				throw UnsupportedOperationException()
+
 			override fun removeAll(workspaceId: UUID) = throw UnsupportedOperationException()
 
 			override fun remove(workspaceId: UUID, id: UUID) = throw UnsupportedOperationException()
 
 			override fun remove(workspaceId: UUID, ids: Set<UUID>) = throw UnsupportedOperationException()
-
-			override fun exists(workspaceId: UUID, operationId: UUID): Boolean =
-				throw UnsupportedOperationException()
 		}
 	}
 

@@ -13,9 +13,9 @@ interface OperationProjectionDAO : ProjectionDAO<OperationProjection> {
     override fun supportedClass() = OperationProjection::class.java
 
     override fun createOrUpdate(projection: OperationProjection): UUID
-    override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection
+    override fun getById(workspaceId: UUID, id: UUID): OperationProjection
+    fun getByIdAsOptional(workspaceId: UUID, operationId: UUID): Optional<OperationProjection>
     fun remove(workspaceId: UUID, id: UUID)
-    fun exists(workspaceId: UUID, operationId: UUID): Boolean
 }
 
 @Repository
@@ -40,15 +40,16 @@ class OperationProjectionDAOImpl(
             ).single()
     }
 
-    override fun getById(
-        workspaceId: UUID, operationId: UUID
-    ): OperationProjection {
-        return jdbc.sql(SELECT)
+    override fun getById(workspaceId: UUID, id: UUID): OperationProjection = getByIdAsOptional(workspaceId, id)
+        .orElseThrow { NotFoundEntityException("Operation not found into workspace (workspaceId='$workspaceId', operationId='$id')") }
+
+
+    override fun getByIdAsOptional(workspaceId: UUID, operationId: UUID): Optional<OperationProjection> =
+        jdbc.sql(SELECT)
             .param("id", operationId)
             .param("workspaceId", workspaceId)
-            .query(OperationProjection::class.java).optional()
-            .orElseThrow { NotFoundEntityException("Operation not found into workspace (workspaceId='$workspaceId', operationId='$operationId')") }
-    }
+            .query(OperationProjection::class.java)
+            .optional()
 
     override fun removeAll(workspaceId: UUID) {
         jdbc.sql(DELETE_BY_WORKSPACE).param("workspaceId", workspaceId).update()
@@ -60,12 +61,6 @@ class OperationProjectionDAOImpl(
 
     override fun remove(workspaceId: UUID, ids: Set<UUID>) {
         jdbc.sql(DELETE_BY_IDS_AND_WORKSPACE).param("workspaceId", workspaceId).param("ids", ids).update()
-    }
-
-    override fun exists(workspaceId: UUID, operationId: UUID): Boolean {
-        return jdbc.sql(CHECK_EXISTS).param("id", operationId).param("workspaceId", workspaceId)
-            .query(Boolean::class.java)
-            .single()
     }
 
     private companion object {
@@ -98,10 +93,6 @@ class OperationProjectionDAOImpl(
                    counterpart_id, comment, external_ref, occurred_at, recorded_at
             from $TABLE_NAME
             WHERE workspace_id = :workspaceId AND id = :id
-        """
-
-        const val CHECK_EXISTS = """
-            SELECT EXISTS(SELECT 1 FROM $TABLE_NAME WHERE workspace_id = :workspaceId AND id = :id)
         """
 
         const val DELETE_BY_WORKSPACE = """

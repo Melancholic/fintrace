@@ -86,6 +86,10 @@ class OperationsRestController(
         ApiResponse(responseCode = "200", description = "Revised; body carries the new state"),
         ApiResponse(responseCode = "400", description = "Malformed body, or `occurredAt` in the future"),
         ApiResponse(responseCode = "404", description = "No such operation in this workspace"),
+        ApiResponse(
+            responseCode = "409",
+            description = "The operation is a transfer leg; write it through `/transfers`"
+        ),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @PutMapping("/{operationId}")
@@ -114,6 +118,10 @@ class OperationsRestController(
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Cancelled"),
         ApiResponse(responseCode = "404", description = "No such operation, including one already cancelled"),
+        ApiResponse(
+            responseCode = "409",
+            description = "The operation is a transfer leg; cancel it through `/transfers`"
+        ),
         ApiResponse(responseCode = "403", description = "Not authenticated"),
     )
     @DeleteMapping("/{operationId}")

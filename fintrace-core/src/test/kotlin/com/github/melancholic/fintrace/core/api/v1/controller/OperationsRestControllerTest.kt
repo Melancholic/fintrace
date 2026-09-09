@@ -6,6 +6,7 @@ import com.github.melancholic.fintrace.core.dao.UsersDAO
 import com.github.melancholic.fintrace.core.dao.WorkspaceDAO
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
+import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
 import com.github.melancholic.fintrace.core.domain.entity.CategoryKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,6 +43,7 @@ class OperationsRestControllerTest(
 	@Autowired private val usersDAO: UsersDAO,
     @Autowired private val accountDAO: AccountProjectionDAO,
     @Autowired private val categoryDAO: CategoryProjectionDAO,
+	@Autowired private val operationDAO: OperationProjectionDAO,
 ) {
 
 	private lateinit var workspaceId: UUID
@@ -320,6 +322,59 @@ class OperationsRestControllerTest(
 	}
 
 	@Test
+	fun `refuses to turn an operation into a transfer leg`() {
+		val id = createdId()
+
+		// The mirror of the POST rule: a PUT cannot name a counterpart either, so accepting
+		// kind = TRANSFER here would produce the same unrepairable half-transfer.
+		mvc.perform(
+			put("${operationsPath}/$id").with(user(USER)).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body().replace("\"EXPENSE\"", "\"TRANSFER\""))
+		).andExpect(status().isConflict)
+
+		assertEquals(1, eventCount(), "a rejected command writes nothing")
+	}
+
+	@Test
+	fun `refuses to revise a transfer leg`() {
+		val (leg, _) = seedTransferLegs()
+
+		// §10.3: a leg is readable through /operations but not writable there. A PUT with an
+		// ordinary kind would turn one half of the pair into a normal operation while the other
+		// half still points at it — a half-transfer no rebuild can repair.
+		mvc.perform(reviseRequest(leg)).andExpect(status().isConflict)
+
+		assertEquals(2, count(), "both legs stay")
+		assertEquals(0, eventCount(), "a rejected command writes nothing")
+	}
+
+	@Test
+	fun `refuses to cancel a transfer leg`() {
+		val (leg, _) = seedTransferLegs()
+
+		// The same guard on DELETE (1.19): cancelling one leg would leave the other pointing at a
+		// row that no longer exists. The pair is cancelled through /transfers or not at all.
+		mvc.perform(cancelRequest(leg)).andExpect(status().isConflict)
+
+		assertEquals(2, count())
+		assertEquals(0, eventCount())
+	}
+
+	@Test
+	fun `keeps a transfer leg readable`() {
+		val (leg, counterpart) = seedTransferLegs()
+
+		// Refusing the writes must not hide the row: transfers are read through the uniform
+		// operations feed (§10.3), which is what lets a client show one without a special case.
+		mvc.perform(get("${operationsPath}/$leg").with(user(USER)))
+			.andExpect(status().isOk)
+			.andExpect(jsonPath("$.kind").value("TRANSFER"))
+			.andExpect(jsonPath("$.transferId").exists())
+			.andExpect(jsonPath("$.counterpartId").value(counterpart.toString()))
+	}
+
+	@Test
 	fun `rejects cancelling an unknown operation`() {
 		mvc.perform(cancelRequest(UUID.randomUUID()))
 			.andExpect(status().isNotFound)
@@ -374,6 +429,15 @@ class OperationsRestControllerTest(
 	private fun cancelRequest(operationId: UUID) = delete("${operationsPath}/$operationId")
 		.with(user(USER))
 		.with(csrf())
+
+	/** A transfer's two legs in this workspace, each on its own account, with no event behind them. */
+	private fun seedTransferLegs(): Pair<UUID, UUID> = TestWorkspaces.seedTransferPair(
+		operationDAO,
+		workspaceId,
+		fromAccountId = accountId,
+		toAccountId = TestWorkspaces.seedAccount(accountDAO, workspaceId, name = "counterpart-account"),
+		categoryId = categoryId,
+	)
 
 	private fun createdId(): UUID = UUID.fromString(
 		idOf(mvc.perform(createRequest()).andExpect(status().isCreated).andReturn().response.contentAsString)

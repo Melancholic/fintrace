@@ -14,6 +14,7 @@ import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.exception.ActionConflictException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
+import com.github.melancholic.fintrace.core.exception.OperationNotSupported
 import com.github.melancholic.fintrace.core.exception.ValidationError
 import com.github.melancholic.fintrace.core.util.TimestampProvider
 import org.junit.jupiter.api.Test
@@ -22,6 +23,7 @@ import java.time.LocalDateTime
 import java.util.*
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * Command-time invariants (§4.10). These run *before* an event is appended, which is the only
@@ -32,12 +34,35 @@ import kotlin.test.assertFailsWith
  */
 class OperationValidationServiceTest {
 
-	private class FakeProjectionDAO(private val known: Set<Pair<UUID, UUID>>) : OperationProjectionDAO {
+    /**
+     * Existence and "is this a transfer leg" are one question now, so the fake answers with the row
+     * rather than with a boolean — which is why the DAO has no `exists` any more.
+     */
+    private class FakeProjectionDAO(
+        private val known: Set<Pair<UUID, UUID>>,
+        private val transferId: UUID? = null,
+    ) : OperationProjectionDAO {
 		val asked = mutableListOf<Pair<UUID, UUID>>()
 
-		override fun exists(workspaceId: UUID, operationId: UUID): Boolean {
+        override fun getByIdAsOptional(workspaceId: UUID, operationId: UUID): Optional<OperationProjection> {
 			asked += workspaceId to operationId
-			return workspaceId to operationId in known
+            if (workspaceId to operationId !in known) return Optional.empty()
+            return Optional.of(
+                OperationProjection(
+                    id = operationId,
+                    workspaceId = workspaceId,
+                    amount = AMOUNT.negate(),
+                    kind = if (transferId == null) OperationKind.EXPENSE else OperationKind.TRANSFER,
+                    accountId = ACCOUNT,
+                    categoryId = CATEGORY,
+                    transferId = transferId,
+                    counterpartId = if (transferId == null) null else COUNTERPART,
+                    comment = null,
+                    externalRef = null,
+                    occurredAt = OCCURRED_AT,
+                    recordedAt = NOW,
+                )
+            )
 		}
 
 		override fun createOrUpdate(projection: OperationProjection): UUID = unsupported()
@@ -47,7 +72,7 @@ class OperationValidationServiceTest {
 		override fun remove(workspaceId: UUID, ids: Set<UUID>): Unit = unsupported()
 
 		private fun unsupported(): Nothing =
-			throw UnsupportedOperationException("validation reads existence only")
+            throw UnsupportedOperationException("validation reads the row it is about to change")
 	}
 
     /**
@@ -87,8 +112,6 @@ class OperationValidationServiceTest {
 
     private class FakeCategoryDAO(private val known: Set<Pair<UUID, UUID>>, private val archived: Boolean = false) :
         CategoryProjectionDAO {
-        override fun exists(workspaceId: UUID, categoryId: UUID) = workspaceId to categoryId in known
-
         override fun getById(workspaceId: UUID, categoryId: UUID): CategoryProjection {
             if (workspaceId to categoryId !in known) {
                 throw NotFoundEntityException("no such category")
@@ -129,7 +152,8 @@ class OperationValidationServiceTest {
 
     private fun service(
         known: Set<Pair<UUID, UUID>> = emptySet(),
-        dao: FakeProjectionDAO = FakeProjectionDAO(known),
+        transferId: UUID? = null,
+        dao: FakeProjectionDAO = FakeProjectionDAO(known, transferId),
         knownAccounts: Set<Pair<UUID, UUID>> = setOf(WORKSPACE to ACCOUNT, OTHER_WORKSPACE to ACCOUNT),
         knownCategories: Set<Pair<UUID, UUID>> = setOf(WORKSPACE to CATEGORY, OTHER_WORKSPACE to CATEGORY),
         accountArchived: Boolean = false,
@@ -222,6 +246,67 @@ class OperationValidationServiceTest {
 		// This is also what makes cancelling twice a 404: the row is gone after the first.
 		assertFailsWith<NotFoundEntityException> { validation.validate(cancel()) }
 	}
+
+    // ------------------------------------------------------------------ transfer legs (1.19)
+
+    @Test
+    fun `rejects a revision of a transfer leg`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION), transferId = TRANSFER)
+
+        // Revising a leg here would rewrite one half of a pair — worse, a kind of INCOME would turn
+        // it into an ordinary operation while its counterpart still points at it (§10.3). The pair
+        // is only writable through /transfers.
+        assertFailsWith<OperationNotSupported> { validation.validate(revise()) }
+    }
+
+    @Test
+    fun `rejects a cancellation of a transfer leg`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION), transferId = TRANSFER)
+
+        // Cancelling one leg leaves the other with a counterpart_id pointing at a row that no
+        // longer exists, and a rebuild reproduces that faithfully.
+        assertFailsWith<OperationNotSupported> { validation.validate(cancel()) }
+    }
+
+    @Test
+    fun `refuses a transfer leg before it looks at anything else`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION), transferId = TRANSFER)
+
+        // Both rules fail on this command. The leg guard has to win, or a client fixing the date
+        // would be told the request is nearly right when the endpoint is simply the wrong one.
+        assertFailsWith<OperationNotSupported> { validation.validate(revise(occurredAt = NOW.plusDays(1))) }
+    }
+
+    @Test
+    fun `rejects a revision that carries the transfer kind`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION))
+
+        // The same rule as on create: an ordinary operation cannot be turned into a leg either,
+        // since a PUT here can name no counterpart. Checked explicitly rather than left to
+        // `asCategoryKind` to throw further down, which would depend on a category lookup running.
+        assertFailsWith<OperationNotSupported> {
+            validation.validate(revise(kind = OperationKind.TRANSFER))
+        }
+    }
+
+    @Test
+    fun `names the transfer a leg belongs to`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION), transferId = TRANSFER)
+
+        // The client is holding a leg id and needs the transfer id to reach /transfers — telling it
+        // only "not allowed here" leaves it with no way forward.
+        val refusal = assertFailsWith<OperationNotSupported> { validation.validate(cancel()) }
+        assertTrue(refusal.message!!.contains(TRANSFER.toString()), "the 409 names the transfer")
+    }
+
+    @Test
+    fun `accepts a revision of an operation that is not a leg`() {
+        val (_, validation) = service(known = setOf(WORKSPACE to OPERATION))
+
+        // The guard keys off transfer_id alone, so an ordinary operation must pass untouched.
+        validation.validate(revise())
+        validation.validate(cancel())
+    }
 
     // ------------------------------------------------------------------ amount (1.16)
 
@@ -338,13 +423,14 @@ class OperationValidationServiceTest {
 	private fun revise(
 		workspaceId: UUID = WORKSPACE,
 		occurredAt: LocalDateTime = OCCURRED_AT,
+        kind: OperationKind = OperationKind.EXPENSE,
 	) = ReviseOperationCommand(
         workspaceId = workspaceId,
         operationId = OPERATION,
         occurredAt = occurredAt,
         amount = AMOUNT,
         accountId = ACCOUNT,
-        kind = OperationKind.EXPENSE,
+        kind = kind,
         categoryId = CATEGORY,
         comment = null,
 	)
@@ -360,6 +446,8 @@ class OperationValidationServiceTest {
 		val OCCURRED_AT: LocalDateTime = LocalDateTime.parse("2026-03-15T14:30:00")
         val ACCOUNT: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000aaaa")
         val CATEGORY: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000bbbb")
+        val TRANSFER: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000cccc")
+        val COUNTERPART: UUID = UUID.fromString("0199a1c2-3d4e-7f80-8123-00000000dddd")
 
         // A command carries the magnitude; the handler applies the sign (§4.13).
         val AMOUNT: BigDecimal = BigDecimal("1234.5600")

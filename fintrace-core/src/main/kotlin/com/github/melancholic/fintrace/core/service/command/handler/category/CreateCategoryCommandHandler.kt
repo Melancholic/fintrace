@@ -24,12 +24,12 @@ class CreateCategoryCommandHandler(
 
     override fun handle(command: CreateCategoryCommand): CategoryProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as CategoryCreated).projection()
     }
 
-    override fun buildEventPayload(command: CreateCategoryCommand): CategoryCreated {
+    private fun buildEventPayload(command: CreateCategoryCommand): CategoryCreated {
         return CategoryCreatedV1(
             id = uuidGenerator.nextUUID(),
             workspaceId = command.workspaceId,

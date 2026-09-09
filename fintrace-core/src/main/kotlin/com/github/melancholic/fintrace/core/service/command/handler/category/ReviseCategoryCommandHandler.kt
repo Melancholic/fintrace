@@ -24,12 +24,12 @@ class ReviseCategoryCommandHandler(
 
     override fun handle(command: ReviseCategoryCommand): CategoryProjection {
         validationService.validate(command)
-        val event = registerEvent(command)
+        val event = registerEvent(command, buildEventPayload(command))
         projectionApplier.apply(event.payload.projectionChange())
         return (event.payload as CategoryRevised).projection()
     }
 
-    override fun buildEventPayload(command: ReviseCategoryCommand): CategoryRevised {
+    private fun buildEventPayload(command: ReviseCategoryCommand): CategoryRevised {
         val current = currentPayload(command.workspaceId, command.categoryId) as? CategoryEventPayload
             ?: throw ApplicationException("Latest event for category '${command.categoryId}' is not an category payload")
 

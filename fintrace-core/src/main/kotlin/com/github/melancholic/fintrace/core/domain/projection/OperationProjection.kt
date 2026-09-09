@@ -18,4 +18,8 @@ data class OperationProjection(
     val externalRef: String?,
     override val occurredAt: LocalDateTime,
     override val recordedAt: LocalDateTime
-) : TemporalProjection
+) : TemporalProjection {
+    fun isTransfer(): Boolean {
+        return transferId != null
+    }
+}
