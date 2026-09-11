@@ -1,6 +1,7 @@
 package com.github.melancholic.fintrace.core.dao.projection
 
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
+import com.github.melancholic.fintrace.core.exception.ApplicationException
 import com.github.melancholic.fintrace.core.exception.NotFoundEntityException
 import com.github.melancholic.fintrace.core.service.projection.ProjectionTarget
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -16,6 +17,8 @@ interface OperationProjectionDAO : ProjectionDAO<OperationProjection> {
     override fun getById(workspaceId: UUID, id: UUID): OperationProjection
     fun getByIdAsOptional(workspaceId: UUID, operationId: UUID): Optional<OperationProjection>
     fun remove(workspaceId: UUID, id: UUID)
+    fun getTransferPartiesById(workspaceId: UUID, transferId: UUID): Pair<UUID, UUID>
+    fun existsTransferById(workspaceId: UUID, transferId: UUID): Boolean
 }
 
 @Repository
@@ -59,6 +62,30 @@ class OperationProjectionDAOImpl(
         remove(workspaceId, setOf(id))
     }
 
+    override fun getTransferPartiesById(
+        workspaceId: UUID,
+        transferId: UUID
+    ): Pair<UUID, UUID> {
+        val ids = jdbc.sql(SELECT_COUNTERPARTS_ID_BY_TRANSFER_ID)
+            .param("workspaceId", workspaceId)
+            .param("transferId", transferId)
+            .query(UUID::class.java)
+            .list()
+        if (ids.isEmpty()) {
+            throw NotFoundEntityException("Transfer not found into workspace (workspaceId='$workspaceId', transferId='$transferId')")
+        }
+        if (ids.size != 2) {
+            throw ApplicationException("Unexpected number of occurred on transfer operations (id=$ids)")
+        }
+        return ids[0]!! to ids[1]!!
+    }
+
+    override fun existsTransferById(workspaceId: UUID, transferId: UUID) = jdbc.sql(CHECK_EXISTS_TRANSFER)
+        .param("workspaceId", workspaceId)
+        .param("transferId", transferId)
+        .query(Boolean::class.java)
+        .single()
+
     override fun remove(workspaceId: UUID, ids: Set<UUID>) {
         jdbc.sql(DELETE_BY_IDS_AND_WORKSPACE).param("workspaceId", workspaceId).param("ids", ids).update()
     }
@@ -101,6 +128,16 @@ class OperationProjectionDAOImpl(
 
         const val DELETE_BY_IDS_AND_WORKSPACE = """
             DELETE from $TABLE_NAME WHERE workspace_id = :workspaceId AND id IN (:ids)
+        """
+
+        const val SELECT_COUNTERPARTS_ID_BY_TRANSFER_ID = """
+            SELECT id FROM $TABLE_NAME
+            WHERE workspace_id = :workspaceId AND transfer_id = :transferId
+            ORDER BY amount ASC
+        """
+
+        const val CHECK_EXISTS_TRANSFER = """
+            SELECT EXISTS ($SELECT_COUNTERPARTS_ID_BY_TRANSFER_ID)
         """
     }
 }

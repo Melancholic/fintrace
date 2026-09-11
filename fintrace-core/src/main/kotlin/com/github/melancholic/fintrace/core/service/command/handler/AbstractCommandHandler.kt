@@ -17,7 +17,7 @@ abstract class AbstractCommandHandler<C : Command<R>, R, P : EventPayload>(
         workspaceId = command.workspaceId,
         payload = payload,
         eventType = command.eventType(),
-        entityType = entityType,
+        entityType = entityType
     )
 
     protected fun currentPayload(workspaceId: UUID, aggregateId: UUID): EventPayload =

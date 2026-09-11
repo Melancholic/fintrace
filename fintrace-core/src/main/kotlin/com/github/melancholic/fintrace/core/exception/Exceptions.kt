@@ -30,4 +30,6 @@ class WorkspaceNotPermitted(userId: String, workspaceId: UUID) :
 
 // SYSTEM ERRORS
 @ResponseStatus(value = HttpStatus.INTERNAL_SERVER_ERROR)
-class ApplicationException(message: String = "Server error")  : RuntimeException(message)
+open class ApplicationException(message: String = "Server error") : RuntimeException(message)
+
+class BrokenTransferException(message: String = "Broken transfer") : ApplicationException(message)

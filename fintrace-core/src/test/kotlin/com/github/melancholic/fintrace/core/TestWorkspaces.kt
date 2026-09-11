@@ -142,21 +142,24 @@ internal object TestWorkspaces {
      * carrying a `transfer_id` — which is what 1.19's guard keys off. Like [seedAccount] there is
      * no event behind these rows, so a replay does not reproduce them.
      *
-     * A real leg carries no category; the projection cannot say that until `categoryId` becomes
-     * nullable with 1.18, so one is passed here and the guard ignores it.
+     * A leg carries no category, which V0009 now enforces at the storage layer.
      */
     fun seedTransferPair(
         operationDAO: OperationProjectionDAO,
         workspaceId: UUID,
-        fromAccountId: UUID,
-        toAccountId: UUID,
-        categoryId: UUID,
-        amount: BigDecimal = BigDecimal("100.0000"),
+        sourceAccountId: UUID,
+        targetAccountId: UUID,
+        transferId: UUID = UUID.randomUUID(),
+        sourceAmount: BigDecimal = BigDecimal("100.0000"),
+        targetAmount: BigDecimal = sourceAmount,
+        comment: String? = null,
         occurredAt: LocalDateTime = LocalDateTime.now(),
     ): Pair<UUID, UUID> {
-        val transferId = UUID.randomUUID()
-        val fromId = UUID.randomUUID()
-        val toId = UUID.randomUUID()
+        val sourceId = UUID.randomUUID()
+        val targetId = UUID.randomUUID()
+        // One clock read for the pair: a command writes both legs from a single timestamp, and the
+        // read side rejects a pair whose legs disagree about recordedAt.
+        val recordedAt = LocalDateTime.now()
 
         fun leg(id: UUID, counterpartId: UUID, accountId: UUID, signed: BigDecimal) = OperationProjection(
             id = id,
@@ -164,18 +167,18 @@ internal object TestWorkspaces {
             amount = signed,
             kind = OperationKind.TRANSFER,
             accountId = accountId,
-            categoryId = categoryId,
+            categoryId = null,
             transferId = transferId,
             counterpartId = counterpartId,
-            comment = null,
+            comment = comment,
             externalRef = null,
             occurredAt = occurredAt,
-            recordedAt = LocalDateTime.now(),
+            recordedAt = recordedAt,
         )
 
-        operationDAO.createOrUpdate(leg(fromId, toId, fromAccountId, amount.negate()))
-        operationDAO.createOrUpdate(leg(toId, fromId, toAccountId, amount))
-        return fromId to toId
+        operationDAO.createOrUpdate(leg(sourceId, targetId, sourceAccountId, sourceAmount.negate()))
+        operationDAO.createOrUpdate(leg(targetId, sourceId, targetAccountId, targetAmount))
+        return sourceId to targetId
     }
 
 	fun ownerId(usersDAO: UsersDAO): UUID = usersDAO.getUserIdByExternalId(TEST_SUBJECT)

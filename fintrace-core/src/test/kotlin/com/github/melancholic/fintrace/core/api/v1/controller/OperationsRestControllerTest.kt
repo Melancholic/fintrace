@@ -274,6 +274,32 @@ class OperationsRestControllerTest(
 		assertEquals(1, eventCount())
 	}
 
+    @Test
+    fun `revises an operation whose account was archived afterwards`() {
+        val id = createdId()
+        archive(accountId)
+
+        // An archived account keeps its own operations editable — otherwise closing an account
+        // would freeze every record on it (§4.8).
+        mvc.perform(reviseRequest(id, amount = "42.0000"))
+            .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `refuses to move an operation onto an archived account`() {
+        val id = createdId()
+        val closed = TestWorkspaces.seedAccount(accountDAO, workspaceId, name = "closed-account")
+        archive(closed)
+
+        mvc.perform(
+            put("${operationsPath}/$id").with(user(USER)).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body().replace(accountId.toString(), closed.toString()))
+        ).andExpect(status().isConflict)
+
+        assertEquals(1, eventCount(), "a rejected command writes nothing")
+    }
+
 	@Test
 	fun `rejects a malformed revision body`() {
 		val id = createdId()
@@ -434,14 +460,18 @@ class OperationsRestControllerTest(
 	private fun seedTransferLegs(): Pair<UUID, UUID> = TestWorkspaces.seedTransferPair(
 		operationDAO,
 		workspaceId,
-		fromAccountId = accountId,
-		toAccountId = TestWorkspaces.seedAccount(accountDAO, workspaceId, name = "counterpart-account"),
-		categoryId = categoryId,
+        sourceAccountId = accountId,
+        targetAccountId = TestWorkspaces.seedAccount(accountDAO, workspaceId, name = "counterpart-account"),
 	)
 
 	private fun createdId(): UUID = UUID.fromString(
 		idOf(mvc.perform(createRequest()).andExpect(status().isCreated).andReturn().response.contentAsString)
 	)
+
+    private fun archive(id: UUID) = jdbc
+        .sql("UPDATE t_accounts SET archived = true WHERE id = :id")
+        .param("id", id)
+        .update()
 
 	private fun eventCount() = jdbc.sql("SELECT count(*) FROM t_events")
 		.query(Int::class.java).single()

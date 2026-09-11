@@ -69,6 +69,12 @@ class CommandFacadeTransactionTest(
 			override fun remove(workspaceId: UUID, id: UUID) = throw UnsupportedOperationException()
 
 			override fun remove(workspaceId: UUID, ids: Set<UUID>) = throw UnsupportedOperationException()
+
+            override fun getTransferPartiesById(workspaceId: UUID, transferId: UUID): Pair<UUID, UUID> =
+                throw UnsupportedOperationException()
+
+            override fun existsTransferById(workspaceId: UUID, transferId: UUID): Boolean =
+                throw UnsupportedOperationException()
 		}
 	}
 

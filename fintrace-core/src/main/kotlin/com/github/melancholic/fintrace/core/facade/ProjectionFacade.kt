@@ -3,11 +3,13 @@ package com.github.melancholic.fintrace.core.facade
 import com.github.melancholic.fintrace.core.dao.projection.AccountProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.CategoryProjectionDAO
 import com.github.melancholic.fintrace.core.dao.projection.OperationProjectionDAO
+import com.github.melancholic.fintrace.core.domain.entity.Transfer
 import com.github.melancholic.fintrace.core.domain.projection.AccountProjection
 import com.github.melancholic.fintrace.core.domain.projection.CategoryProjection
 import com.github.melancholic.fintrace.core.domain.projection.OperationProjection
 import com.github.melancholic.fintrace.core.security.IdentityProvider
 import com.github.melancholic.fintrace.core.service.WorkspaceService
+import com.github.melancholic.fintrace.core.service.transfer.TransferLoader
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -18,15 +20,18 @@ interface ProjectionFacade {
     fun getAllAccounts(workspaceId: UUID, includeArchived: Boolean): List<AccountProjection>
     fun getCategory(workspaceId: UUID, categoryId: UUID): CategoryProjection
     fun getAllCategories(workspaceId: UUID, includeArchived: Boolean): List<CategoryProjection>
+    fun getTransfer(workspaceId: UUID, transferId: UUID): Transfer
 }
 
 @Service
+@Transactional
 class ProjectionFacadeImpl(
     private val operationDAO: OperationProjectionDAO,
     private val accountDAO: AccountProjectionDAO,
     private val categoryDAO: CategoryProjectionDAO,
     private val workspaceService: WorkspaceService,
-    private val identityProvider: IdentityProvider
+    private val identityProvider: IdentityProvider,
+    private val transferLoader: TransferLoader
 ) : ProjectionFacade {
 
     @Transactional(readOnly = true)
@@ -72,6 +77,15 @@ class ProjectionFacadeImpl(
     ): List<CategoryProjection> {
         val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
         return categoryDAO.getAllCategories(workspace.id, includeArchived)
+    }
+
+    @Transactional(readOnly = true)
+    override fun getTransfer(
+        workspaceId: UUID,
+        transferId: UUID
+    ): Transfer {
+        val workspace = workspaceService.requireReadable(identityProvider.currentUserId(), workspaceId)
+        return transferLoader.loadTransfer(workspace.id, transferId)
     }
 
 }

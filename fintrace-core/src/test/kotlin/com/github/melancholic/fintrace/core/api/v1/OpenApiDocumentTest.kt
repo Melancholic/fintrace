@@ -109,6 +109,25 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
             .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/categories/{categoryId}'].delete.responses.409").exists())
     }
 
+    @Test
+    fun `documents every transfer endpoint`() {
+        mvc.perform(get("/v3/api-docs"))
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers'].post.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers/{transferId}'].get.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers/{transferId}'].put.summary").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers/{transferId}'].delete.summary").exists())
+    }
+
+    @Test
+    fun `documents the pair conflicts on both families`() {
+        // Two refusals a generated client has to expect: a leg moving onto an archived account,
+        // and a write aimed at a leg through /operations, where the pair is not writable (§10.3).
+        mvc.perform(get("/v3/api-docs"))
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers/{transferId}'].put.responses.409").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/operations/{operationId}'].put.responses.409").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/operations/{operationId}'].delete.responses.409").exists())
+    }
+
 	@Test
 	fun `serves the Swagger UI anonymously`() {
 		mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk)

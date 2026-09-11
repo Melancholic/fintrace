@@ -65,6 +65,8 @@ class OperationValidationServiceTest {
             )
 		}
 
+        override fun getTransferPartiesById(workspaceId: UUID, transferId: UUID): Pair<UUID, UUID> = unsupported()
+        override fun existsTransferById(workspaceId: UUID, transferId: UUID): Boolean = unsupported()
 		override fun createOrUpdate(projection: OperationProjection): UUID = unsupported()
 		override fun getById(workspaceId: UUID, operationId: UUID): OperationProjection = unsupported()
 		override fun removeAll(workspaceId: UUID): Unit = unsupported()

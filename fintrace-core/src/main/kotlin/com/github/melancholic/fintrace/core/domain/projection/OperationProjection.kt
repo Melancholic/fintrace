@@ -11,7 +11,7 @@ data class OperationProjection(
     val amount: BigDecimal,
     val kind: OperationKind,
     val accountId: UUID,
-    val categoryId: UUID,
+    val categoryId: UUID?,
     val transferId: UUID?,
     val counterpartId: UUID?,
     val comment: String?,

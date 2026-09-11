@@ -594,6 +594,34 @@ invariant is violated, and every later revision would have to keep two events in
 transfer), so category statistics filter with `WHERE kind <> 'TRANSFER'`. A single
 condition, not branching logic.
 
+**Reconsidered at M1 and kept.** Dropping `TRANSFER` from the enum and identifying a leg by
+`transfer_id IS NOT NULL` would make a leg through `/operations` *unrepresentable* rather than
+merely validated, and would leave `OperationKind` total. It was rejected because it moves a
+transfer's identity out of the column statistics group by: a forgotten filter would then inflate
+income and expense alike instead of producing a visible `TRANSFER` bucket, and a silent wrong
+total is the failure this system is built to avoid. The redundancy it complained about is real,
+so `V0009` makes it a schema invariant instead —
+`(kind = 'TRANSFER') = (transfer_id IS NOT NULL)`, the same for `counterpart_id`, and
+`(transfer_id IS NOT NULL) = (category_id IS NULL)`.
+
+**As built at M1 (1.18–1.20):**
+
+- **The two sides are `source` and `target`** throughout — command, payload, entity and wire.
+  `from`/`to` was the first naming; `to` is also Kotlin's infix `Pair` constructor, and the read
+  path already spoke of source and target.
+- **A leg's id belongs to the slot, not to the account.** A revision reuses both leg ids from the
+  newest event even when it changes the accounts or swaps them, so the upsert lands on the existing
+  rows; fresh ids would orphan the previous pair with nothing in the log to remove them. The same
+  read carries `external_ref` forward.
+- **The cancel payload names both leg ids.** The aggregate id is the transfer's, and no row carries
+  it, so a replay has no other way to know which rows to drop.
+- **A transfer has no projection table.** It is assembled on read from its two legs plus their
+  accounts' currencies. The conversion rate is derived on the way out (`target / source`, 6 dp,
+  `HALF_UP`) and is **never stored and never accepted as input** — the two amounts are the only
+  source of truth, and the source format made the same choice (dump reference §6.2).
+- **`external_ref` belongs to the transfer, not to a leg** — the dump carries one `uid` per
+  transfer, so a per-leg field would store the same value twice and let the two drift.
+
 ### 4.6 Balance corrections: anchors
 
 A balance correction records an **observation**: "I counted the cash, there is 1500". It is
@@ -858,7 +886,15 @@ swallowed, and balances before the anchor are untouched.
 Consequently **writes to an archived account are rejected at command time** — as an operation's
 account, as either transfer leg, as an anchor target. A legitimate back-dated entry into a
 closed account goes unarchive → enter → archive: the flag carries no "archived since" date, and
-inventing one would be a second temporal axis. Statistics endpoints take an `includeArchived`
+inventing one would be a second temporal axis.
+
+**Refined at M1: "write" means a new arrival, not any edit.** A revision is refused when the
+account is archived **and differs from the one the row already carries**; editing a row that is
+already on an archived account is allowed. Otherwise closing an account would freeze every record
+on it, and a typo on a closed account could never be corrected — while moving money onto a closed
+account stays refused, which is what the rule is for. It holds per leg on a transfer, and the same
+check was added to operations, where revise had only ever verified that the account existed. Statistics endpoints take
+an `includeArchived`
 parameter for picker-style views (§11) — a filter on presentation, never on the arithmetic.
 
 #### Principle: no physical deletion
@@ -1613,6 +1649,13 @@ The asymmetry is deliberate and reflects the model (§4.5):
   atomically producing two linked entries. That cannot be expressed by posting a single leg.
   Editing a transfer's amount must update both legs, so `PUT /operations/{id}` on a single
   leg is rejected.
+
+**Revised at M1: `DELETE /operations/{id}` on a leg is rejected too.** Cancelling one leg leaves
+the other pointing at a row that no longer exists — the same half-transfer the `PUT` rule exists
+to prevent, and a `204` cannot express that two rows went away. Both refusals are 409 and name the
+`transfer_id`, so a client holding a leg knows what to call instead. Letting a leg's `DELETE`
+cancel the whole transfer was considered and rejected: a URL naming one operation must not destroy
+two, and the CLI and the importer reach the same commands.
 
 The alternative — a single `POST /operations` whose body shape varies by `kind` — was
 rejected as the worse trade.

@@ -34,14 +34,15 @@ class OperationValidationServiceImpl(
         checkAmount(command)
         checkAccountOnCreate(command)
         checkCategoryOnCreate(command)
+
     }
 
     override fun validate(command: ReviseOperationCommand) {
-        checkTransfer(command.workspaceId, command.operationId)
+        val current = checkTransfer(command.workspaceId, command.operationId)
         checkOccurredAt(command)
         checkKind(command)
         checkAmount(command)
-        checkAccountOnRevise(command)
+        checkAccountOnRevise(command, current.accountId)
         checkCategoryOnRevise(command)
     }
 
@@ -78,8 +79,11 @@ class OperationValidationServiceImpl(
         }
     }
 
-    private fun checkAccountOnRevise(command: ReviseOperationCommand) {
-        accountDAO.getById(command.workspaceId, command.accountId)
+    private fun checkAccountOnRevise(command: ReviseOperationCommand, currentAccountId: UUID) {
+        val account = accountDAO.getById(command.workspaceId, command.accountId)
+        if (account.archived && command.accountId != currentAccountId) {
+            throw ActionConflictException("Couldn't move an operation onto an archived account")
+        }
     }
 
     private fun checkCategoryOnCreate(command: CreateOperationCommand) {
@@ -105,13 +109,14 @@ class OperationValidationServiceImpl(
         }
     }
 
-    private fun checkTransfer(workspaceId: UUID, operationId: UUID) {
+    private fun checkTransfer(workspaceId: UUID, operationId: UUID): OperationProjection {
         val operation = requireExists(workspaceId, operationId)
         if (operation.isTransfer()) {
             throw TransferOperationNotSupportedException(
                 "Operation belongs to transfer id='${operation.transferId}' and couldn't be changed on its own"
             )
         }
+        return operation
     }
 
     class TransferOperationNotSupportedException(message: String = "Transfer couldn't be processed as an ordinary operation") :

@@ -7,13 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **M0 complete** (tasks 0.1–0.13 — see `docs/plans/M0.md`); **M1 in progress**, per
 `docs/plans/M1.md` and `docs/tasks.md`.
 
-`fintrace-core` runs four areas end to end — workspaces, operations, accounts and categories —
-each through `CommandFacade.processCommand` → dispatcher → handler → event + projection, in one
-transaction, with REST on top; and `POST /admin/api/v1/workspaces/{id}/replay` clears the
-projection and rebuilds it from the event log. An operation now names an account and a category,
-and the rules tying the three together are checked at command time (1.16). Transfers and anchors
-are the remaining M1 aggregates. Only Core exists — the importer, BFF and web are later
-milestones.
+`fintrace-core` runs five areas end to end — workspaces, operations, accounts, categories and
+transfers — each through `CommandFacade.processCommand` → dispatcher → handler → event +
+projection, in one transaction, with REST on top; and `POST /admin/api/v1/workspaces/{id}/replay`
+clears the projection and rebuilds it from the event log. An operation now names an account and a
+category, and the rules tying the three together are checked at command time (1.16). A transfer is
+one event that writes two linked legs (1.18–1.20), which is the first command whose payload
+produces more than one row. **Anchors and balances are what remain in M1.** Only Core exists — the
+importer, BFF and web are later milestones.
 
 **`docs/status.md` is the live progress record** — what is done, what is next, and the known
 gaps. Read it first; it is regenerated whenever the status is reviewed, and it is the one file
@@ -209,7 +210,11 @@ whole import.
 - **Transfers are two linked ledger entries**, not one record: shared `transfer_id`, each
   pointing at the other via `counterpart_id`. Read them through `/operations` (uniform account
   feed); write them through `/transfers` (the pair is an invariant — create/revise/cancel must
-  always affect both). `PUT /operations/{id}` on a transfer leg is rejected.
+  always affect both). `PUT` **and `DELETE`** `/operations/{id}` on a transfer leg are rejected,
+  409, naming the `transfer_id`. The sides are `source` and `target`; the source leg is stored
+  negative; a leg's id belongs to its slot and survives a revision; a leg carries no category.
+  `V0009` makes all three of those pair invariants schema-level. The conversion rate is derived
+  on read (`target / source`) and never stored or accepted as input.
 - **`amount` is signed**, expenses negative, so balance is `SUM(amount)` with no `CASE`.
 - **Balances are never stored, always computed**: nearest preceding anchor + sum of operations
   after it.

@@ -41,7 +41,7 @@ data class OperationResponse(
     val id: UUID,
     val workspaceId: UUID,
     val accountId: UUID,
-    val categoryId: UUID,
+    val categoryId: UUID?,
     val transferId: UUID?,
     val amount: BigDecimal,
     val occurredAt: LocalDateTime,

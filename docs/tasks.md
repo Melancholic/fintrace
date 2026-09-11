@@ -122,13 +122,20 @@ events, and the projection rows are identical.
       (operation exists in this workspace; `occurredAt` not in the future).
       A revise with an unchanged body still appends an event at M1 — suppression is deferred
       (§4.4)
-- [ ] **1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing
-      `transfer_id`, each pointing at the other via `counterpart_id`
-- [ ] **1.19** Reject `PUT` **and `DELETE`** `/operations/{id}` on a transfer leg (§10.3) — 409,
+- [x] ~~**1.18** Transfer create/revise/cancel → two linked legs, atomically, sharing
+  `transfer_id`, each pointing at the other via `counterpart_id`~~ — one event over a
+  `TRANSFER` aggregate whose payload carries both legs, so a half-transfer is unrepresentable in
+  the log. Leg ids belong to the slot and are carried forward on revise; cancel names both in its
+  payload, because the aggregate id is the transfer's and no row carries it. `V0009` makes the
+  three pair invariants schema-level. The legs are `source` / `target` throughout
+- [x] ~~**1.19** Reject `PUT` **and `DELETE`** `/operations/{id}` on a transfer leg (§10.3) — 409,
   naming the `transfer_id`. `DELETE` is included because cancelling one leg leaves the
-  half-transfer this task exists to prevent
-- [ ] **1.20** `/transfers` write endpoints, plus `GET /transfers/{id}` so a client can load the
-  pair; transfer legs readable via `/operations`
+  half-transfer this task exists to prevent~~
+- [x] ~~**1.20** `/transfers` write endpoints, plus `GET /transfers/{id}` so a client can load the
+  pair; transfer legs readable via `/operations`~~ — four documented endpoints. The read assembles
+  a transfer from its two legs plus their accounts' currencies and derives the rate
+  (`target / source`) on the way out; `OpenApiDocumentTest` covers the family and the two 409s a
+  client has to expect
 - [ ] **1.21** Migration + projection: `anchors`
 - [ ] **1.22** Anchor create; reject back-dating (§4.6)
 - [ ] **1.23** Anchor delete: only the most recent for that account

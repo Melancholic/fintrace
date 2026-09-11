@@ -19,6 +19,7 @@ enum class EntityType {
 	OPERATION,
 	ACCOUNT,
 	CATEGORY,
+	TRANSFER
 }
 
 enum class EventType {
