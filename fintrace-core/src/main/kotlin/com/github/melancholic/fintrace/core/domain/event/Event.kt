@@ -19,7 +19,8 @@ enum class EntityType {
 	OPERATION,
 	ACCOUNT,
 	CATEGORY,
-	TRANSFER
+	TRANSFER,
+	BALANCE_ANCHOR
 }
 
 enum class EventType {

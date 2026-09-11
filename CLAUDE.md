@@ -13,7 +13,9 @@ projection, in one transaction, with REST on top; and `POST /admin/api/v1/worksp
 clears the projection and rebuilds it from the event log. An operation now names an account and a
 category, and the rules tying the three together are checked at command time (1.16). A transfer is
 one event that writes two linked legs (1.18–1.20), which is the first command whose payload
-produces more than one row. **Anchors and balances are what remain in M1.** Only Core exists — the
+produces more than one row, and a balance anchor is an absolute observation per account
+(1.21–1.23). **Balances — the query, the unexplained difference, confirm-balance — are what
+remain in M1**, with the opening balance (1.9). Only Core exists — the
 importer, BFF and web are later milestones.
 
 **`docs/status.md` is the live progress record** — what is done, what is next, and the known
@@ -127,7 +129,7 @@ discovery. No provider-specific SDK anywhere.
 ### Event sourcing (strict, every entity inside a workspace)
 
 Events are the only thing written directly; projection tables (`t_operations`, and at M1
-`t_accounts`, `t_categories`, `t_anchors`) are derived and rebuildable. The non-negotiables:
+`t_accounts`, `t_categories`, `t_balance_anchors`) are derived and rebuildable. The non-negotiables:
 
 - **Nothing writes to a projection except the event handler.** One stray `UPDATE` desyncs
   projection from events, silently.
@@ -153,7 +155,7 @@ Single `t_events` table for all aggregate types — splitting buys nothing at th
 costs global ordering.
 
 **Database naming convention (§4.13.1):** `t_` tables, `v_` views, `idx_` indexes. M1 adds
-`t_workspaces`, `t_accounts`, `t_categories`, `t_anchors` (`t_anchors` still to come). Kotlin
+`t_workspaces`, `t_accounts`, `t_categories` and `t_balance_anchors`. Kotlin
 names stay unprefixed (`OperationProjection`, not `TOperation`).
 
 **A payload class is immutable once written — with one spent exception.** `OperationCreatedV1`
@@ -218,7 +220,7 @@ whole import.
 - **`amount` is signed**, expenses negative, so balance is `SUM(amount)` with no `CASE`.
 - **Balances are never stored, always computed**: nearest preceding anchor + sum of operations
   after it.
-- **Anchors are absolute observed values, never deltas, and cannot be back-dated.** An anchor
+- **Balance anchors are absolute observed values, never deltas, and cannot be back-dated.** An anchor
   affects balance calculation only — it never appears in income/expense statistics. Only the
   most recent anchor for an account may be deleted. Anchors are the sole exception to the
   no-physical-deletion rule.

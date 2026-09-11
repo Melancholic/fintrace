@@ -136,7 +136,7 @@ live path.
 
 **What this reshapes:**
 
-- No `anchors` section is needed in the import contract — only accounts' opening balances.
+- No `balance_anchors` section is needed in the import contract — only accounts' opening balances.
 - Deletion handling is minor: 79 operations and 4 transfers, no categories or groups.
 - **`type = 11` at 2899 events is the centre of gravity** — nearly one update per two
   operations, so the `moneyBack` / `moneyBack2` balance gates are heavily exercised.
@@ -622,9 +622,9 @@ so `V0009` makes it a schema invariant instead —
 - **`external_ref` belongs to the transfer, not to a leg** — the dump carries one `uid` per
   transfer, so a per-leg field would store the same value twice and let the two drift.
 
-### 4.6 Balance corrections: anchors
+### 4.6 Balance anchors
 
-A balance correction records an **observation**: "I counted the cash, there is 1500". It is
+A balance anchor records an **observation**: "I counted the cash, there is 1500". It is
 an absolute assignment, not a delta.
 
 **Decision: store the absolute value.**
@@ -639,7 +639,13 @@ made, so `occurred_at` always equals `recorded_at`. There is nothing to record
 retrospectively, because the count did not happen retrospectively. This falls out of the
 semantics rather than being an imported constraint.
 
-**An account's opening balance is an anchor** at account creation. No separate concept
+> **As built at M1:** the command carries no date at all — `CreateBalanceAnchorCommand` is
+> deliberately not a `TemporalCommand`, so there is no back-dated value to reject. Both columns
+> are written from **one** clock read. `occurred_at` is stored rather than dropped as redundant:
+> the balance query compares it against operations' `occurred_at`, and matching business time to
+> record time would be a category error that merely happens to give the right answer today.
+
+**An account's opening balance is a balance anchor** at account creation. No separate concept
 needed.
 
 #### Balance calculation
@@ -1000,7 +1006,7 @@ does not carry an `occurredAt`, and the single place that writes the row falls b
 `recorded_at`. A command therefore still cannot invent a business date, and readers still cannot
 meet a null.
 
-**Projection tables:** `t_accounts`, `t_categories`, `t_operations`, `t_anchors` — written only by the
+**Projection tables:** `t_accounts`, `t_categories`, `t_operations`, `t_balance_anchors` — written only by the
 event handler. `t_workspaces` is **not** among them: it is authoritative, written directly, and
 never touched by a rebuild (§4.1.1).
 
@@ -1057,7 +1063,7 @@ transfers table — contradicts reading everything through `/operations`.
 > `kind` — both legs are `TRANSFER`, one negative and one positive — so the conversion cannot be
 > keyed on `kind` alone once 1.18 lands.
 
-**`anchors`** — `account_id`, `value`, `occurred_at`, `recorded_at`.
+**`balance_anchors`** — `account_id`, `value`, `occurred_at`, `recorded_at`.
 
 **`accounts`** — `name`, `currency`, `icon`, `archived`. No stored balance (§4.6).
 
@@ -1098,14 +1104,14 @@ convention only. `flyway_schema_history` is Flyway's own and keeps its name.
 
 ### 4.14 Indexes
 
-| Index | Serves |
-|---|---|
-| `t_operations(workspace_id, occurred_at)` | All period statistics |
-| `t_operations(workspace_id, account_id, occurred_at)` | Balance calculation from an anchor |
-| `t_operations(workspace_id, category_id)` | Category breakdown |
-| `t_anchors(workspace_id, account_id, occurred_at)` | Finding the nearest preceding anchor |
-| `t_events(workspace_id, id)` | Full rebuild in order |
-| `t_events(workspace_id, aggregate_id, id)` | Reading an aggregate's previous payload — only needed when no-op revision suppression (§4.4) lands |
+| Index                                                      | Serves                                                                                             |
+|------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| `t_operations(workspace_id, occurred_at)`                  | All period statistics                                                                              |
+| `t_operations(workspace_id, account_id, occurred_at)`      | Balance calculation from an anchor                                                                 |
+| `t_operations(workspace_id, category_id)`                  | Category breakdown                                                                                 |
+| `t_balance_anchors(workspace_id, account_id, occurred_at)` | Finding the nearest preceding anchor                                                               |
+| `t_events(workspace_id, id)`                               | Full rebuild in order                                                                              |
+| `t_events(workspace_id, aggregate_id, id)`                 | Reading an aggregate's previous payload — only needed when no-op revision suppression (§4.4) lands |
 
 ---
 
@@ -1125,13 +1131,13 @@ Processing order is Core's business, since Core knows the dependencies.
 
 **Sections:**
 
-| Section | Contents |
-|---|---|
-| `accounts` | Name, currency, icon, opening balance (which becomes the first anchor), archived flag |
-| `categories` | Flat list with `parentExternalId`; Core assembles the tree |
-| `operations` | Income and expense entries: date, amount, account, category, comment |
-| `transfers` | One object per transfer, both sides and both amounts — Core expands it into two ledger entries (§4.5) |
-| `anchors` | Balance corrections carried over from the source |
+| Section           | Contents                                                                                              |
+|-------------------|-------------------------------------------------------------------------------------------------------|
+| `accounts`        | Name, currency, icon, opening balance (which becomes the first anchor), archived flag                 |
+| `categories`      | Flat list with `parentExternalId`; Core assembles the tree                                            |
+| `operations`      | Income and expense entries: date, amount, account, category, comment                                  |
+| `transfers`       | One object per transfer, both sides and both amounts — Core expands it into two ledger entries (§4.5) |
+| `balance_anchors` | Balance corrections carried over from the source                                                      |
 
 No `currencies` section: currency is a code on an account, not an entity.
 
@@ -1604,14 +1610,14 @@ visible and cheap to correct — it probably is not.
 
 All under `/workspaces/{workspaceId}/`.
 
-| Resource                 | Notes                                                                                                                                                            |
-|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `/workspaces`            | Create, rename, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) and requires `?version=`. Activation is implicit (§4.1.1), so there is no activate endpoint |
-| `/accounts`              | CRUD; `DELETE` archives rather than deletes (§4.8), `POST /{id}/restore` reverses it                                                                             |
-| `/accounts/{id}/anchors` | `POST` to create, `DELETE` to remove — see below                                                                                                                 |
-| `/categories`            | CRUD; `DELETE` is a soft delete (§4.7)                                                                                                                           |
-| `/operations`            | CRUD; **read surface for transfer legs as well**                                                                                                                 |
-| `/transfers`             | Write surface for transfers                                                                                                                                      |
+| Resource                         | Notes                                                                                                                                                            |
+|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `/workspaces`                    | Create, rename, archive, unarchive; `DELETE` sets `DELETED` (§4.1.1) and requires `?version=`. Activation is implicit (§4.1.1), so there is no activate endpoint |
+| `/accounts`                      | CRUD; `DELETE` archives rather than deletes (§4.8), `POST /{id}/restore` reverses it                                                                             |
+| `/accounts/{id}/balance-anchors` | `POST` to create, `DELETE` to remove — see below                                                                                                                 |
+| `/categories`                    | CRUD; `DELETE` is a soft delete (§4.7)                                                                                                                           |
+| `/operations`                    | CRUD; **read surface for transfer legs as well**                                                                                                                 |
+| `/transfers`                     | Write surface for transfers                                                                                                                                      |
 
 ### 10.2 Deletion semantics
 
@@ -1660,11 +1666,19 @@ two, and the CLI and the importer reach the same commands.
 The alternative — a single `POST /operations` whose body shape varies by `kind` — was
 rejected as the worse trade.
 
-### 10.4 Anchors
+### 10.4 Balance anchors
 
-`POST /accounts/{id}/anchors` creates a balance correction or confirmation (§4.6).
+`POST /accounts/{id}/balance-anchors` creates a balance correction or confirmation (§4.6).
 
 **No update.** An anchor is an observation; correcting it is not meaningful.
+
+> **As built at M1 (1.21–1.23):** four endpoints —
+> `POST` / `GET` on `/accounts/{accountId}/balance-anchors`, `GET` / `DELETE` on
+> `…/{anchorId}`. The list exists because §4.6 requires the unexplained difference to be visible
+> in account history, so a client needs the series, not just the latest. The two 409s are worded
+> apart — "only the last anchor may be deleted" and "the account is archived" — because the
+> remedies differ. Reaching an anchor through an account that does not own it is a 404, not a
+> 403: an id you cannot see must look like one that does not exist.
 
 **`DELETE` removes only the most recent anchor**, for typo recovery. Since anchors cannot be
 back-dated, every new anchor is later than all previous ones, so "most recent" is simply

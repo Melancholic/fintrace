@@ -83,7 +83,10 @@ events, and the projection rows are identical.
 - [x] ~~**1.8** Create / rename / archive / unarchive commands and events~~ — one
   `SetAccountArchivedCommand` with a flag rather than two commands; archive is `REVISED`,
   never `CANCELLED`
-- [ ] **1.9** Opening balance becomes the first anchor (§4.6) — waits for anchors (1.21)
+- [ ] **1.9** Opening balance becomes the first balance anchor (§4.6) — waits for 1.21. An
+  omitted opening balance means *no anchor*, not one at zero: "I haven't counted" and "I
+  counted, it's empty" are different facts. Makes account creation the first command to
+  append two events of different aggregate types, so extend the rebuild-equality test
 - [x] ~~**1.10** CRUD endpoints; `DELETE` archives~~ — reversed by `POST /{id}/restore` (§10.2)
 
 ### Categories
@@ -106,7 +109,7 @@ events, and the projection rows are identical.
 - [x] ~~**1.15** CRUD endpoints~~ — `DELETE` archives, `POST /{id}/restore` reverses, listing is
   flat with `?includeArchived`
 
-### Operations, transfers, anchors
+### Operations, transfers, balance anchors
 
 - [x] ~~**1.16** Extend `operations` projection with the full field set (§4.13)~~ — `V0008` adds
   `kind`, `account_id`, `category_id`, `transfer_id`, `counterpart_id`, `comment`,
@@ -136,13 +139,26 @@ events, and the projection rows are identical.
   a transfer from its two legs plus their accounts' currencies and derives the rate
   (`target / source`) on the way out; `OpenApiDocumentTest` covers the family and the two 409s a
   client has to expect
-- [ ] **1.21** Migration + projection: `anchors`
-- [ ] **1.22** Anchor create; reject back-dating (§4.6)
-- [ ] **1.23** Anchor delete: only the most recent for that account
-      (`ORDER BY occurred_at DESC LIMIT 1`)
-- [ ] **1.24** Balance calculation: nearest preceding anchor + `SUM(amount)` after it
-- [ ] **1.25** Unexplained-difference calculation for an anchor
-- [ ] **1.26** "Confirm balance" action — anchor at the currently computed value
+- [x] ~~**1.21** Migration + projection: `t_balance_anchors` (`V0010`)~~ — uuid PK minted in code
+  (§4.12), cascade FK to `t_workspaces`, and one index on
+  `(workspace_id, account_id, occurred_at DESC)` serving both the nearest-preceding lookup and
+  the latest-anchor check. Wiring `ProjectionTarget.BALANCE_ANCHOR` retired the applier's
+  `else -> error(...)`: the enum now has no unwired value
+- [x] ~~**1.22** Balance anchor create — `occurred_at` is set by the server, so there is no
+  back-dating to reject (§4.6). The value may be negative or zero: it is an observation,
+  not a magnitude~~ — both timestamps come from one clock read; an archived account is
+  refused. Four documented endpoints under `/accounts/{accountId}/balance-anchors`
+- [x] ~~**1.23** Balance anchor delete: only the most recent for that account
+  (`ORDER BY occurred_at DESC LIMIT 1`), removing the row — the sole physical deletion
+  in the system (§10.4). No revise: an observation is withdrawn, not corrected~~ — the
+  deletion is a `CANCELLED` event, so a rebuild does not resurrect the row; reaching an
+  anchor through the wrong account is a 404, and not-the-latest a 409 with its own message
+- [ ] **1.24** Balance calculation: nearest preceding anchor + `SUM(amount)` after it,
+  parameterised by `asOf` from the start — M3's `/balances/accounts` takes exactly that (§11.4)
+- [ ] **1.25** Unexplained-difference calculation for an anchor — `value − computed`, where
+  *computed* excludes the anchor being measured, or the difference is zero by construction
+- [ ] **1.26** "Confirm balance" action — a balance anchor at the currently computed value;
+  no new machinery
 
 **Watch for:** every invariant belongs at command time, before the event is written (§4.10).
 Validating inside a handler is too late.
@@ -208,7 +224,7 @@ Validating inside a handler is too late.
 ### Import contract
 
 - [ ] **2.18** `POST /workspaces/{id}/import` — one request, sections in body (§5.1). No
-      `anchors` section from the source apart from opening balances; imported balance
+  `balance_anchors` section from the source apart from opening balances; imported balance
       assignments arrive via 2.10b
 - [ ] **2.19** Reject import into a non-`NEW` workspace
 - [ ] **2.20** External-id → internal-id mapping during import

@@ -118,6 +118,19 @@ class OpenApiDocumentTest(@Autowired private val mvc: MockMvc) {
             .andExpect(jsonPath("$.paths['/api/v1/workspaces/{workspaceId}/transfers/{transferId}'].delete.summary").exists())
     }
 
+	@Test
+	fun `documents every balance anchor endpoint`() {
+		val anchors = "/api/v1/workspaces/{workspaceId}/accounts/{accountId}/balance-anchors"
+		mvc.perform(get("/v3/api-docs"))
+			.andExpect(jsonPath("$.paths['$anchors'].post.summary").exists())
+			.andExpect(jsonPath("$.paths['$anchors'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['$anchors/{anchorId}'].get.summary").exists())
+			.andExpect(jsonPath("$.paths['$anchors/{anchorId}'].delete.summary").exists())
+			// Deleting anything but the newest anchor is refused (§10.4), and a generated client
+			// has to expect that or it looks like a server fault.
+			.andExpect(jsonPath("$.paths['$anchors/{anchorId}'].delete.responses.409").exists())
+	}
+
     @Test
     fun `documents the pair conflicts on both families`() {
         // Two refusals a generated client has to expect: a leg moving onto an archived account,
